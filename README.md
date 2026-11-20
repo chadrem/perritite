@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.svg" width="160" alt="Perritite logo: a seated dog cut from violet and teal fluorite crystal">
+</p>
+
 # Perritite
 
 **Slack threads for [Claude Code](https://claude.com/claude-code): read them,
