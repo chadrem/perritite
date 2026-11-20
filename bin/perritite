@@ -13,7 +13,7 @@ die() {
 }
 
 repo="chadrem/perritite"
-here=$(cd "$(dirname "$0")" && pwd)
+here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 root=$(dirname "$here")
 version=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$root/.claude-plugin/plugin.json" 2>/dev/null | head -n 1)
 [ -n "$version" ] || die "no version in $root/.claude-plugin/plugin.json"
@@ -33,22 +33,28 @@ ext=""
 [ "$os" = windows ] && ext=".exe"
 asset="perritite-$os-$arch$ext"
 
-want=$(awk -v a="$asset" '$2 == a || $2 == "*" a { print $1 }' "$root/launcher/SHA256SUMS" 2>/dev/null)
+want=$(awk -v a="$asset" '$2 == a || $2 == "*" a { print tolower($1); exit }' "$root/launcher/SHA256SUMS" 2>/dev/null)
 [ -n "$want" ] || die "no checksum for $asset in $root/launcher/SHA256SUMS"
 if command -v sha256sum >/dev/null 2>&1; then
-	sha() { sha256sum "$1" | awk '{print $1}'; }
+	sha() { sha256sum <"$1" | awk '{print $1}'; } # stdin: no filename escaping
 elif command -v shasum >/dev/null 2>&1; then
-	sha() { shasum -a 256 "$1" | awk '{print $1}'; }
+	sha() { shasum -a 256 <"$1" | awk '{print $1}'; }
 else
 	die "sha256sum or shasum is required to verify the binary"
 fi
 
 cache="${XDG_CACHE_HOME:-}"
 case "$cache" in /*) ;; *) cache="$HOME/.cache" ;; esac # the XDG spec ignores relative paths
-dir="$cache/perritite/bin/$version"
+base="$cache/perritite"
+dir="$base/bin/$version"
 bin="$dir/$asset"
+mkdir -p "$base" || die "cannot create $base"
+# Nobody else may be able to write where the binary lives.
+[ -O "$base" ] || die "$base is not owned by you; refusing to use it"
+chmod 700 "$base" 2>/dev/null || true
 
 if [ -f "$bin" ] && [ "$(sha "$bin")" = "$want" ]; then
+	[ -x "$bin" ] || chmod +x "$bin"
 	exec "$bin" "$@"
 fi
 
@@ -76,7 +82,7 @@ tmp=$(mktemp "$dir/.download.XXXXXX")
 trap 'rm -f "$tmp"' EXIT
 # shellcheck disable=SC2086 # $proto is deliberately split into flags
 curl -fsSL --retry 3 $proto -o "$tmp" "$url/$asset" ||
-	die "could not download $url/$asset (check your network or proxy)"
+	die "could not download $url/$asset: release v$version may not be published yet, or a network or proxy blocked it"
 [ "$(sha "$tmp")" = "$want" ] || die "checksum mismatch for $asset; refusing to run it"
 chmod +x "$tmp"
 if ! mv -f "$tmp" "$bin" 2>/dev/null; then

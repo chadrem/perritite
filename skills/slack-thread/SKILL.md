@@ -24,6 +24,11 @@ perritite whoami                            # the identity your posts appear as
 perritite config                            # where the token, state and downloads come from
 ```
 
+Run `perritite version` once at the start, before any other `perritite`
+command. It downloads and verifies the binary on first use. On Windows it
+also makes later calls run the binary directly, so URLs and message text are
+never re-parsed by `cmd.exe`.
+
 Every message in `read` output shows its `ts`. Use the newest one with
 `--after` on the next read instead of re-reading the whole thread.
 

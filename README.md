@@ -41,10 +41,11 @@ If the install summary says `Run /reload-plugins to apply`, run
 That is the whole install. The plugin brings the `perritite` command with it.
 The first time Claude runs it, it downloads the binary for your machine from
 this repository's [GitHub release](https://github.com/chadrem/perritite/releases).
-Every run checks the binary against SHA-256 checksums committed in the plugin
-itself, so only the exact build of the version you installed ever runs. On
-macOS and Linux this needs `curl` and `sha256sum` or `shasum`, which are
-almost always present.
+It checks the binary against SHA-256 checksums committed in the plugin
+itself, so only the exact build of the version you installed ever runs (on
+macOS, Linux and Git Bash, on every run; from Windows PowerShell or `cmd.exe`,
+when the binary is installed). On macOS and Linux this needs `curl` and
+`sha256sum` or `shasum`, which are almost always present.
 
 On Windows, install [Git for Windows](https://git-scm.com/download/win)
 (recommended): Claude Code's Bash tool runs through Git Bash, which has
@@ -91,9 +92,15 @@ JSON
 the `token_command` for your secret store (see
 [the token options](#token-and-config)).
 
-**Windows:** save the token in a file only you can read, for example
-`%USERPROFILE%\.perritite-token`, then create
-`%AppData%\perritite\config.json`:
+**Windows:** save the token in a file only you can read. In PowerShell (this
+prompts for the token and writes plain ASCII; a `>` redirect would write
+UTF-16, which breaks the token):
+
+```powershell
+Set-Content -Encoding ascii -NoNewline "$HOME\.perritite-token" (Read-Host 'Slack token')
+```
+
+Then create `%AppData%\perritite\config.json`:
 
 ```json
 {
@@ -121,6 +128,9 @@ If something is off:
   `github.com` (a proxy or firewall). Install the binary yourself
   ([below](#using-perritite-outside-claude-code)); a `perritite` on your
   `PATH` works the same way.
+- **`checksum mismatch`:** what was downloaded is not the published build
+  (often a proxy that rewrites or blocks downloads), so it is not run.
+  Install the binary yourself as above.
 
 ### 5. Use it
 
@@ -145,8 +155,9 @@ claude plugin marketplace update perritite
 claude plugin update perritite@perritite
 ```
 
-Then run `/reload-plugins` in any open session. The new version's binary is
-downloaded on first use.
+Then run `/reload-plugins` in any open session, or restart Claude Code if
+the update says a restart is required. The new version's binary is downloaded
+on first use.
 
 ## Why Perritite?
 
@@ -278,8 +289,10 @@ The plugin puts `perritite` on the `PATH` only inside Claude Code. To use it
 in your own terminal (or where Claude Code can't download it), either
 download the binary for your platform from
 [Releases](https://github.com/chadrem/perritite/releases), check it against
-the release's `SHA256SUMS`, rename it to `perritite` (`perritite.exe` on
-Windows) and put it on your `PATH`, or build it with Go 1.23+:
+`launcher/SHA256SUMS` in the repository at that release's tag (the checksums
+the plugin itself enforces), rename it to `perritite` (`perritite.exe` on
+Windows), make it executable (`chmod +x perritite`) and put it on your
+`PATH`, or build it with Go 1.23+:
 
 ```sh
 go install github.com/chadrem/perritite@latest   # installs to $(go env GOPATH)/bin

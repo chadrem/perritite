@@ -30,7 +30,8 @@ so a quiet thread would wake you twice an hour just to re-arm.
 
 ## Start
 
-1. Check the setup once: `perritite config`. If no owner ids are listed,
+1. Run `perritite version`, then `perritite config` (once; see the
+   `slack-thread` skill for why `version` comes first). If no owner ids are listed,
    no Slack message can carry the user's authority (see Identity below).
    If `wait` refuses because the token's user is also an owner, tell the
    user: Claude needs its own Slack identity, or their messages are

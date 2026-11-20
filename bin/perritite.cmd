@@ -7,7 +7,7 @@ setlocal
 rem pwsh 7's module path breaks Windows PowerShell's own modules; let it rebuild its default.
 set "PSModulePath="
 rem The full path, so a powershell.exe or .bat in the current directory is never run.
-%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0..\launcher\perritite-fetch.ps1"
-if errorlevel 1 exit /b 1
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%~dp0..\launcher\perritite-fetch.ps1"
+if %ERRORLEVEL% NEQ 0 exit /b 1
 "%~dp0perritite.exe" %*
 exit /b %ERRORLEVEL%
