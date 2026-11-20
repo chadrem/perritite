@@ -106,7 +106,9 @@ func newHarness(t *testing.T) *harness {
 		t:      t,
 		fake:   slacktest.New(t),
 		thread: &fakeThread{msgs: []map[string]any{slacktest.Msg("1000000000.000000", "U1", "root")}},
-		clock:  &fakeClock{t: t, now: time.Unix(1_800_000_000, 0)},
+		// A date in the past on purpose: --max-run must work from the
+		// waiter's clock, not real time (a 2027 start once hid that).
+		clock:  &fakeClock{t: t, now: time.Unix(1_500_000_000, 0)},
 		store:  &watch.Store{Dir: t.TempDir()},
 		out:    &bytes.Buffer{},
 		owners: map[string]bool{"UOWNER": true},
@@ -897,5 +899,34 @@ func TestAPollCutOffByMaxRunEndsTheRunEvenAfterAClockStep(t *testing.T) {
 	}
 	if clock.sleeps != 0 {
 		t.Fatalf("kept retrying (%d sleeps) after its own --max-run deadline cut the poll off", clock.sleeps)
+	}
+}
+
+func TestEachCycleSavesTheLastPollAndOwnPostCursorBeforeSleeping(t *testing.T) {
+	h := newHarness(t)
+	ref, _ := thread.ParseURL(threadURL)
+	checked := false
+	h.clock.onSleep = func(n int) {
+		switch n {
+		case 1:
+			h.thread.post("1000000010.000000", "UME", "our own reply")
+		case 2:
+			// Poll 2 saw our own post; the save before this sleep must have
+			// recorded both the poll time and the cursor past that post.
+			st, err := h.store.Load(ref.Channel, ref.ThreadTS)
+			if err != nil {
+				t.Fatal(err)
+			}
+			polled := h.clock.now.Add(-h.clock.slept[n-1])
+			if st.LastPollMS != polled.UnixMilli() || st.Cursor != "1000000010.000000" {
+				t.Fatalf("state before sleeping = %+v (want last poll %d, cursor past own post)", st, polled.UnixMilli())
+			}
+			checked = true
+			h.thread.post("1000000020.000000", "U2", "done")
+		}
+	}
+	h.run(watch.Options{After: "1000000000.000000"})
+	if !checked {
+		t.Fatal("never reached the check")
 	}
 }

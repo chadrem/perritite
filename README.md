@@ -129,12 +129,16 @@ If something is off:
   firewall that blocks or rewrites downloads), so nothing is run. Download
   the binary for your platform from
   [Releases](https://github.com/chadrem/perritite/releases) another way and
-  put it where the launcher looks; it verifies the file before using it:
+  put it where the launcher looks. Check it against `launcher/SHA256SUMS` at
+  that release's tag first:
   - macOS, Linux and Git Bash:
-    `~/.cache/perritite/bin/<version>/perritite-<os>-<arch>` (for example
-    `perritite-darwin-arm64`; the version is the plugin's, e.g. `0.1.2`);
+    `~/.cache/perritite/bin/<version>/perritite-<os>-<arch>` (or under
+    `$XDG_CACHE_HOME` if you set it). For example `perritite-darwin-arm64`,
+    or `perritite-windows-amd64.exe` in Git Bash; the version is the
+    plugin's, e.g. `0.1.2`. The launcher verifies this file on every run.
   - Windows PowerShell or `cmd.exe`: the plugin's `bin\perritite.exe` (its
     folder is under `~/.claude/plugins/cache/perritite/perritite/<version>/`).
+    This copy is run directly and **not** re-verified, so check it yourself.
 
 ### 5. Use it
 

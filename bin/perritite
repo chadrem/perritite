@@ -50,7 +50,7 @@ dir="$base/bin/$version"
 bin="$dir/$asset"
 mkdir -p "$base" || die "cannot create $base"
 # Nobody else may be able to write where the binary lives.
-[ -O "$base" ] || die "$base is not owned by you; refusing to use it (fix: chown -R \"\$(id -un)\" \"$base\", or delete it)"
+[ -O "$base" ] || die "$base is not owned by you; refusing to use it (fix: sudo chown -R \"\$(id -un)\" \"$base\", or delete it)"
 chmod 700 "$base" 2>/dev/null || true
 
 if [ -f "$bin" ] && [ "$(sha "$bin")" = "$want" ]; then
@@ -85,7 +85,7 @@ trap 'rm -f "$tmp"' EXIT
 curl -fsSL --retry 3 $proto -o "$tmp" "$url/$asset" ||
 	die "could not download $url/$asset: release v$version may not be published yet, or a network or proxy blocked it"
 [ "$(sha "$tmp")" = "$want" ] || die "checksum mismatch for $asset; refusing to run it"
-chmod +x "$tmp"
+chmod +x "$tmp" || die "cannot make $tmp executable"
 if ! mv -f "$tmp" "$bin" 2>/dev/null; then
 	# A concurrent first run may have won (Windows can't replace a running
 	# exe); fine, as long as what's there verifies.
@@ -93,4 +93,5 @@ if ! mv -f "$tmp" "$bin" 2>/dev/null; then
 fi
 trap - EXIT
 rm -f "$tmp"
+[ -x "$bin" ] || die "cannot execute $bin (is $cache on a noexec mount? point XDG_CACHE_HOME elsewhere)"
 exec "$bin" "$@"

@@ -333,7 +333,7 @@ func TestTheAPIURLHookOnlyAcceptsLoopback(t *testing.T) {
 	}
 }
 
-func TestWaitRejectsAMaxRunNotLongerThanTheInterval(t *testing.T) {
+func TestWaitRejectsAMaxRunUnderTwiceTheInterval(t *testing.T) {
 	r := newEnv(t).run("", "wait", threadURL, "--max-run", "20s", "--interval", "15s")
 	if r.code != 1 || !strings.Contains(r.stderr, "--max-run must be at least twice --interval") {
 		t.Fatalf("%+v", r)

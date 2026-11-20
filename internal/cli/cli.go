@@ -453,7 +453,7 @@ func (c *cmd) wait() error {
 		return errors.New("--interval must be at least 1s")
 	}
 	if opts.MaxRun > 0 && opts.MaxRun < 2*opts.Interval {
-		return errors.New("--max-run must be at least twice --interval (or each run would do a single poll and exit)")
+		return errors.New("--max-run must be at least twice --interval, so a run gets more than one poll in")
 	}
 	ctx, cancel := c.ctx()
 	defer cancel()

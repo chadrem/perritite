@@ -256,7 +256,7 @@ func own(m slack.Message, me slack.AuthInfo) bool {
 func (s *session) loop(budget *errorBudget, me slack.AuthInfo) (Outcome, error) {
 	w, opts, clock := s.w, s.opts, s.w.clock()
 	for {
-		msgs, err, cutOff := s.poll()
+		msgs, cutOff, err := s.poll()
 		now := clock.Now()
 		// Saved once per cycle, by sleep() or the exit path, so saves are an
 		// --interval apart (Windows can refuse to replace a file it was just
@@ -267,9 +267,10 @@ func (s *session) loop(budget *errorBudget, me slack.AuthInfo) (Outcome, error) 
 				return s.stop()
 			}
 			// Only the --max-run deadline means max-run: cutOff says our own
-			// deadline context expired (monotonic, immune to clock steps).
-			// An ordinary HTTP timeout also matches DeadlineExceeded and is
-			// ridden out as a transient error.
+			// deadline context expired (its timer counts the remaining time
+			// on the monotonic clock, so a step during the poll can't move
+			// it). An ordinary HTTP timeout also matches DeadlineExceeded and
+			// is ridden out as a transient error.
 			if cutOff || s.pastDeadline(now) {
 				return s.maxRun()
 			}
@@ -352,17 +353,19 @@ func (s *session) loop(budget *errorBudget, me slack.AuthInfo) (Outcome, error) 
 
 // poll fetches replies newer than seen, bounded by the --max-run deadline.
 // cutOff reports that the deadline itself (not the caller, not an HTTP
-// timeout) ended the request.
-func (s *session) poll() ([]slack.Message, error, bool) {
+// timeout) ended the request. The bound is the time remaining by the
+// waiter's clock, not an absolute wall time, so it is right under a fake
+// clock and unaffected by a clock step during the request.
+func (s *session) poll() (msgs []slack.Message, cutOff bool, err error) {
 	if s.deadline.IsZero() {
-		msgs, err := s.w.Svc.API.Replies(s.ctx, s.ref.Channel, s.ref.ThreadTS, s.seen)
-		return msgs, err, false
+		msgs, err = s.w.Svc.API.Replies(s.ctx, s.ref.Channel, s.ref.ThreadTS, s.seen)
+		return msgs, false, err
 	}
-	ctx, cancel := context.WithDeadline(s.ctx, s.deadline)
+	ctx, cancel := context.WithTimeout(s.ctx, s.deadline.Sub(s.w.clock().Now()))
 	defer cancel()
-	msgs, err := s.w.Svc.API.Replies(ctx, s.ref.Channel, s.ref.ThreadTS, s.seen)
-	cutOff := err != nil && s.ctx.Err() == nil && errors.Is(ctx.Err(), context.DeadlineExceeded)
-	return msgs, err, cutOff
+	msgs, err = s.w.Svc.API.Replies(ctx, s.ref.Channel, s.ref.ThreadTS, s.seen)
+	cutOff = err != nil && s.ctx.Err() == nil && errors.Is(ctx.Err(), context.DeadlineExceeded)
+	return msgs, cutOff, err
 }
 
 // sleep waits d, unless that would carry the run past --max-run, in which
@@ -393,6 +396,9 @@ func (s *session) pastDeadline(now time.Time) bool {
 // deliver prints the pending messages, then commits the cursor past them:
 // a crash between the two re-delivers rather than loses.
 func (s *session) deliver() (Outcome, error) {
+	// Save the poll time first (the cursor is still uncommitted here), so a
+	// run killed while printing still paces its successor.
+	s.save()
 	s.w.printBatch(s.ctx, s.ref, s.pending)
 	s.st.Cursor = s.seen
 	return New, s.w.Store.Save(s.st)
