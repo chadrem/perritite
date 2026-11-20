@@ -15,8 +15,13 @@ the user gates decisions, data rules) still applies.
 ## How the watch works, and why
 
 `perritite wait <url>` blocks until **someone else** posts, prints their
-messages, and **exits**. Run it as a background command (Bash with
-`run_in_background: true`) and treat its exit as your notification.
+messages, and **exits**. Run it as a background command and treat its exit as
+your notification.
+
+> **Every `perritite wait`, the first and every re-arm, goes through the Bash
+> tool with `run_in_background: true`.** Never run it in the foreground: it
+> would block your whole turn until someone posts, and the Bash tool's timeout
+> (2 minutes by default) would kill it, silently ending the watch.
 
 - It prints nothing while waiting, never reports your own posts, and merges a
   burst of messages into one exit. A quiet thread costs nothing, and each real
@@ -42,12 +47,15 @@ so a quiet thread would wake you twice an hour just to re-arm.
    perritite post <url> "👀 Monitoring this thread now. I'll reply as messages come in and sign off after 24 quiet hours."
    ```
 
-3. Arm the waiter **in the background**, starting from the announcement:
+3. Arm the waiter, starting from the announcement. Call the Bash tool with
+   **`run_in_background: true`** (not a plain Bash call):
 
-   ```
-   Bash({ command: "perritite wait <url> --after <ANNOUNCE_TS>", run_in_background: true,
-          description: "Wait for replies in <#channel> thread" })
-   ```
+   - command: `perritite wait <url> --after <ANNOUNCE_TS>`
+   - run_in_background: `true`
+   - description: `Wait for replies in <#channel> thread`
+
+   The call returns at once with a task id. If it doesn't, you ran it in the
+   foreground: let it finish, then re-arm in the background.
 
 4. Keep working normally, or end your turn. When the waiter exits you get a
    task notification. **Read its output file** (the notification gives the
@@ -70,9 +78,9 @@ When the user wants a watch with no end ("keep watching until I say stop"):
 
 Output lines start at column 0 with one of these words. **Re-arm in the same
 turn** you handle an exit, with the same flags minus `--after`:
-`perritite wait <url>` (add `--idle 0` for an until-stopped watch). Re-arm
-before you start any long piece of work, so the thread is still heard while
-you work.
+`perritite wait <url>` (add `--idle 0` for an until-stopped watch), again via
+the Bash tool with `run_in_background: true`. Re-arm before you start any long
+piece of work, so the thread is still heard while you work.
 
 | First word | Meaning | What to do |
 |---|---|---|
