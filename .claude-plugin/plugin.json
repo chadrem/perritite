@@ -1,0 +1,8 @@
+{
+  "name": "slack-thread",
+  "description": "Read, reply in and live-monitor Slack threads from Claude Code, waking the model only when someone posts.",
+  "author": { "name": "Chad Remesch" },
+  "homepage": "https://github.com/chadrem/slack-thread",
+  "repository": "https://github.com/chadrem/slack-thread",
+  "license": "AGPL-3.0-only"
+}

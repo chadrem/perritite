@@ -1,0 +1,14 @@
+{
+  "name": "slack-thread",
+  "description": "slack-thread: Slack threads for Claude Code, with a watcher that wakes the model only when someone posts.",
+  "owner": {
+    "name": "Chad Remesch"
+  },
+  "plugins": [
+    {
+      "name": "slack-thread",
+      "source": "./",
+      "description": "Read, reply in and live-monitor Slack threads from Claude Code, waking the model only when someone posts."
+    }
+  ]
+}
