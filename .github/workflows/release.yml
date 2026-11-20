@@ -1,8 +1,10 @@
 name: release
 
-# Push a tag vX.Y.Z (matching .claude-plugin/plugin.json "version") to build
-# the binaries and publish them, with SHA256SUMS, as a GitHub release. The
-# plugin launcher (bin/perritite) downloads from exactly these assets.
+# Push a tag vX.Y.Z to publish a release. See "Releasing" in CLAUDE.md: the
+# tagged commit must carry plugin.json version X.Y.Z and the launcher/SHA256SUMS
+# written by scripts/release-prep.sh. This workflow rebuilds (reproducibly)
+# and refuses to publish anything that does not match those checksums, so
+# what the plugin launcher accepts is exactly what was committed.
 
 on:
   push:
@@ -15,8 +17,10 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
       - name: Tag matches the plugin version
@@ -26,9 +30,11 @@ jobs:
       - run: go test ./...
       - name: Build
         run: scripts/build-release.sh "${GITHUB_REF_NAME#v}" dist
+      - name: Build matches the committed launcher/SHA256SUMS
+        run: diff launcher/SHA256SUMS dist/SHA256SUMS
       - name: Smoke-test the linux/amd64 binary
         run: '[ "$(dist/perritite-linux-amd64 version)" = "perritite ${GITHUB_REF_NAME#v}" ]'
       - name: Publish
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
+        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes --verify-tag

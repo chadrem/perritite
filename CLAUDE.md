@@ -21,12 +21,19 @@ session. The repo is also a Claude Code plugin marketplace
 - `e2e_test.go`: builds the binary and runs it as real processes.
 - `bin/perritite` (POSIX sh) and `bin/perritite.cmd` plus
   `launcher/perritite-fetch.ps1` (Windows): the plugin launchers. Claude Code
-  puts the plugin's `bin/` on PATH. They download the release binary that
-  matches `.claude-plugin/plugin.json`'s `version`, verify it against the
-  release's `SHA256SUMS`, cache it, and exec it.
+  puts the plugin's `bin/` on PATH. They download the release binary for
+  `.claude-plugin/plugin.json`'s `version` and verify it against
+  `launcher/SHA256SUMS`, which is committed:
+  - the sh launcher caches the binary and re-verifies it on every run;
+  - the Windows one installs a verified `bin/perritite.exe`, which Windows
+    then finds ahead of the `.cmd`, so arguments skip cmd.exe parsing.
+
   `scripts/test-launcher.{sh,ps1}` test them against a local fake release.
-- `scripts/build-release.sh`: the six release binaries plus `SHA256SUMS`, used
-  by `.github/workflows/release.yml` on a `vX.Y.Z` tag.
+- `scripts/build-release.sh`: reproducible release binaries plus
+  `SHA256SUMS` (exact toolchain from go.mod's `toolchain` line, `-trimpath`,
+  `-buildvcs=false`). `scripts/release-prep.sh X.Y.Z` sets the version and
+  writes `launcher/SHA256SUMS`. CI's `reproducible` job proves Linux, macOS
+  and Windows builds are byte-identical.
 
 ## Commands
 
@@ -76,18 +83,33 @@ GOOS=windows go vet ./...   # Windows-only files compile separately
 10. **Standard library only.** Cross-platform single static binaries are the
    point.
 
-11. **Launchers run only verified release binaries.** A downloaded binary is
-    executed, so it must match `SHA256SUMS`, and `PERRITITE_RELEASE_URL`
-    (the test hook) is honoured only for `127.0.0.1`/`localhost`.
-12. **`plugin.json` `version` is the release version.** The release workflow
-    refuses a tag that doesn't match it, and the launcher fetches exactly that
-    version. Set `version` only in `plugin.json`, never also in
+11. **Launchers run only binaries matching the committed
+    `launcher/SHA256SUMS`.** Never trust the release's own checksum file:
+    whoever can replace an asset can replace that too.
+    `PERRITITE_RELEASE_URL` (the test hook) is honoured only as exactly
+    `http://127.0.0.1:<port>` or `http://localhost:<port>`, and the
+    committed checksum is enforced even then.
+12. **`plugin.json` `version`, the tag, and `launcher/SHA256SUMS` move
+    together.** The release workflow refuses a tag that doesn't match the
+    version, and refuses to publish a build that doesn't match the committed
+    checksums. Set `version` only in `plugin.json`, never also in
     `marketplace.json`.
+13. **Any Go change after `release-prep.sh` invalidates the checksums.** Run
+    it last, after the final code change for the release.
 
 ## Releasing
 
-Bump `version` in `.claude-plugin/plugin.json`, commit, push, then
-`git tag vX.Y.Z && git push origin vX.Y.Z`. Users update with
+Plugin installs track `main`, so `main` must never carry a version whose
+release isn't published yet:
+
+1. On a branch, finish all code changes, then run
+   `scripts/release-prep.sh X.Y.Z` and commit `plugin.json` plus
+   `launcher/SHA256SUMS` ("Release vX.Y.Z").
+2. `git tag vX.Y.Z && git push origin vX.Y.Z`. Push only the tag.
+3. Wait for the release workflow to publish it.
+4. Fast-forward `main` to the tag and push `main`.
+
+Users update with `claude plugin marketplace update perritite` and then
 `claude plugin update perritite@perritite`.
 
 ## Cross-platform notes

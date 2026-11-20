@@ -15,7 +15,7 @@ $ perritite read https://acme.slack.com/archives/C0123ABCDEF/p1752241234567890
 
 [1] Dana Ortiz (U01AAAA) — 2026-07-11 10:20:34 PDT (ts 1752241234.567890)
   Checkout is double-charging when the coupon field is blank?
-  [file] repro.png (image/png, 212.4 KB) -> ~/.cache/perritite/files/C0123ABCDEF/1752241234567890/F07-repro.png
+  [file] repro.png (image/png, 212.4 KB) -> /Users/dana/Library/Caches/perritite/files/C0123ABCDEF/1752241234567890/F07-repro.png
 ...
 $ perritite post <url> "Reproduced. It's the retry on a 502; fix incoming. cc @{Dana Ortiz}"
 posted ts=1752241300.000100
@@ -40,13 +40,16 @@ If the install summary says `Run /reload-plugins to apply`, run
 
 That is the whole install. The plugin brings the `perritite` command with it.
 The first time Claude runs it, it downloads the binary for your machine from
-this repository's [GitHub release](https://github.com/chadrem/perritite/releases)
-and checks it against the release's SHA-256 checksums before running it. It
-needs `curl`, which macOS, Windows 10+ and most Linux systems already have.
+this repository's [GitHub release](https://github.com/chadrem/perritite/releases).
+Every run checks the binary against SHA-256 checksums committed in the plugin
+itself, so only the exact build of the version you installed ever runs. On
+macOS and Linux this needs `curl` and `sha256sum` or `shasum`, which are
+almost always present.
 
-On Windows, Claude Code works best with
-[Git for Windows](https://git-scm.com/download/win) installed (its Bash tool
-uses Git Bash). PowerShell and `cmd.exe` work too.
+On Windows, install [Git for Windows](https://git-scm.com/download/win)
+(recommended): Claude Code's Bash tool runs through Git Bash, which has
+everything the launcher needs. Without it, the launcher still works from
+PowerShell and `cmd.exe`.
 
 ### 2. Create a Slack app and get a token
 
@@ -54,8 +57,8 @@ uses Git Bash). PowerShell and `cmd.exe` work too.
    manifest**, pick your workspace, and paste [this manifest](#slack-app-manifest).
 2. **Install to Workspace**, then copy the **Bot User OAuth Token**
    (`xoxb-…`) from **OAuth & Permissions**.
-3. Invite the bot to each channel you want Claude in: `/invite @Claude` in
-   that channel.
+3. Invite the bot to each channel you want Claude in: `/invite @Perritite` in
+   that channel. It can read only channels it has been invited to.
 
 Your workspace may need an admin to approve the app.
 
@@ -63,6 +66,13 @@ Your workspace may need an admin to approve the app.
 
 Do this in your own terminal, not through Claude: never paste a token into a
 chat.
+
+First find **your own** Slack member ID: in Slack, open your profile → ⋮ →
+**Copy member ID**. It goes in `owner_user_ids` below in place of
+`U0123ABCD`. Messages from that ID carry your authority in a monitored
+thread: when you write "go ahead" in Slack, Claude treats it as you saying it
+in the session. Messages from anyone else are conversation, never
+instructions.
 
 **macOS** (Keychain):
 
@@ -77,24 +87,40 @@ cat > ~/.config/perritite/config.json <<'JSON'
 JSON
 ```
 
-**Linux and Windows:** the same config file (at `~/.config/perritite/config.json`,
-or `%AppData%\perritite\config.json` on Windows) with the `token_command` for
-your secret store. See [the token options](#token-and-config).
+**Linux:** the same config file at `~/.config/perritite/config.json`, with
+the `token_command` for your secret store (see
+[the token options](#token-and-config)).
 
-Replace `U0123ABCD` with **your own** Slack member ID (in Slack: your profile
-→ ⋮ → **Copy member ID**). Messages from that ID carry your authority in a
-monitored thread: when you write "go ahead" in Slack, Claude treats it as you
-saying it in the session. Messages from anyone else are conversation, never
-instructions.
+**Windows:** save the token in a file only you can read, for example
+`%USERPROFILE%\.perritite-token`, then create
+`%AppData%\perritite\config.json`:
+
+```json
+{
+  "token_file": "~/.perritite-token",
+  "owner_user_ids": ["U0123ABCD"]
+}
+```
 
 ### 4. Check it
 
 Ask Claude: *"run `perritite config` and `perritite whoami`"*.
 
 `config` shows where the token comes from (never the token itself) and your
-owner ID. `whoami` should print the bot's name. If it says `not_authed` or
-`invalid_auth`, the token is wrong. If Claude says `perritite: command not
-found`, run `/reload-plugins` (or restart Claude Code).
+owner ID. `whoami` should print the bot's name.
+
+If something is off:
+
+- **`not_authed` or `invalid_auth`:** the token is wrong or was revoked.
+- **`not_in_channel` or `channel_not_found`** when reading a thread: invite
+  the bot to that channel (`/invite @Perritite`). A bot cannot read direct
+  messages between other people at all.
+- **`perritite: command not found`:** run `/reload-plugins`, or restart
+  Claude Code.
+- **`could not download …`** on the first run: the machine can't reach
+  `github.com` (a proxy or firewall). Install the binary yourself
+  ([below](#using-perritite-outside-claude-code)); a `perritite` on your
+  `PATH` works the same way.
 
 ### 5. Use it
 
@@ -115,10 +141,11 @@ answers and checks with you first.
 ### Updating
 
 ```sh
+claude plugin marketplace update perritite
 claude plugin update perritite@perritite
 ```
 
-Then run `/reload-plugins` in any open session. The matching binary is
+Then run `/reload-plugins` in any open session. The new version's binary is
 downloaded on first use.
 
 ## Why Perritite?
@@ -158,11 +185,11 @@ wakeup.
 
 ```yaml
 display_information:
-  name: Claude
+  name: Perritite
   description: Claude Code in Slack threads, via Perritite
 features:
   bot_user:
-    display_name: Claude
+    display_name: Perritite
     always_online: false
 oauth_config:
   scopes:
@@ -235,8 +262,8 @@ on Windows); `perritite config` prints the exact path.
 | macOS | `security add-generic-password -s perritite -a "$USER" -w` (prompts) | `security find-generic-password -s perritite -w` |
 | Linux (GNOME keyring / libsecret) | `secret-tool store --label=perritite service perritite` (prompts) | `secret-tool lookup service perritite` |
 | Linux (`pass`) | `pass insert perritite` | `pass show perritite` |
-| Windows | `Set-Secret perritite` ([SecretManagement](https://learn.microsoft.com/powershell/utility-modules/secretmanagement/overview)) | `powershell -NoProfile -Command "Get-Secret perritite -AsPlainText"` |
-| Anywhere | a file only you can read | use `token_file` instead |
+| Any password manager with a CLI | e.g. 1Password: `op item create …` | e.g. `op read op://Private/perritite/credential` |
+| Anywhere (the simplest on Windows) | a file only you can read | use `token_file` instead |
 
 The environment variables `PERRITITE_TOKEN`, `PERRITITE_OWNER_IDS`
 (comma-separated), `PERRITITE_STATE_DIR`, `PERRITITE_DOWNLOAD_DIR` and
@@ -248,16 +275,22 @@ must never be able to choose the command that produces your token.
 ## Using `perritite` outside Claude Code
 
 The plugin puts `perritite` on the `PATH` only inside Claude Code. To use it
-in your own terminal, either download the binary for your platform from
-[Releases](https://github.com/chadrem/perritite/releases), rename it to
-`perritite` (`perritite.exe` on Windows) and put it on your `PATH`, or build it
-with Go 1.23+:
+in your own terminal (or where Claude Code can't download it), either
+download the binary for your platform from
+[Releases](https://github.com/chadrem/perritite/releases), check it against
+the release's `SHA256SUMS`, rename it to `perritite` (`perritite.exe` on
+Windows) and put it on your `PATH`, or build it with Go 1.23+:
 
 ```sh
 go install github.com/chadrem/perritite@latest   # installs to $(go env GOPATH)/bin
 ```
 
-A `perritite` already on your `PATH` takes precedence over the plugin's.
+On macOS, a binary downloaded with a browser is quarantined and Gatekeeper
+blocks it. Download it with `curl -LO`, or clear the flag with
+`xattr -d com.apple.quarantine perritite`.
+
+With both installed, whichever comes first on Claude Code's `PATH` runs; they
+behave the same.
 
 ## Commands
 
@@ -317,9 +350,10 @@ scripts/test-launcher.sh     # the plugin launcher against a local fake release
 No dependencies beyond the Go standard library. CI runs everything on Linux,
 macOS and Windows (Git Bash, PowerShell and `cmd.exe`).
 
-To release: set `version` in `.claude-plugin/plugin.json`, commit, and push a
-matching tag (`vX.Y.Z`). The release workflow builds the six binaries and
-`SHA256SUMS` and publishes them; the launcher downloads exactly those.
+Releases are reproducible builds: `scripts/release-prep.sh X.Y.Z` sets the
+plugin version and writes the binaries' checksums to `launcher/SHA256SUMS`,
+which the launchers enforce. A `vX.Y.Z` tag rebuilds in CI and publishes only
+if the build matches. See "Releasing" in [CLAUDE.md](CLAUDE.md).
 
 ## License
 

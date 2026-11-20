@@ -220,6 +220,7 @@ type Message struct {
 	TS         string `json:"ts"`
 	ThreadTS   string `json:"thread_ts"`
 	User       string `json:"user"`
+	BotID      string `json:"bot_id"`
 	Username   string `json:"username"`
 	Text       string `json:"text"`
 	BotProfile *struct {
@@ -292,6 +293,7 @@ type AuthInfo struct {
 	URL    string `json:"url"`
 	User   string `json:"user"`
 	UserID string `json:"user_id"`
+	BotID  string `json:"bot_id"` // set for bot tokens
 }
 
 // ---------------------------------------------------------------------------

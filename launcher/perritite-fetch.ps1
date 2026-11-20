@@ -1,13 +1,23 @@
-# Finds or downloads the perritite.exe for this plugin's version, verifies it
-# against the release's SHA256SUMS, and prints its path (used by perritite.cmd).
+# Installs bin\perritite.exe for perritite.cmd: downloads this plugin
+# version's Windows binary from the GitHub release and verifies it against
+# launcher\SHA256SUMS (committed in the plugin) before putting it in place.
+# Once bin\perritite.exe exists, Windows finds it ahead of perritite.cmd
+# (PATHEXT ranks .EXE before .CMD), so later calls run the binary directly
+# and their arguments never go through cmd.exe parsing.
+#
+# .NET is used instead of cmdlets for downloading and hashing: Windows
+# PowerShell started from pwsh 7 inherits a module path that breaks
+# autoloading of cmdlets such as Get-FileHash.
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 function Fail($msg) { [Console]::Error.WriteLine("perritite: $msg"); exit 1 }
 
 $repo = 'chadrem/perritite'
-$manifest = Join-Path (Split-Path $PSScriptRoot -Parent) '.claude-plugin\plugin.json'
-try { $version = (Get-Content -Raw $manifest | ConvertFrom-Json).version } catch { Fail "cannot read $manifest" }
-if (-not $version) { Fail "no version in $manifest" }
+$root = Split-Path $PSScriptRoot -Parent
+$bindir = Join-Path $root 'bin'
+$exe = Join-Path $bindir 'perritite.exe'
+try { $version = ([IO.File]::ReadAllText((Join-Path $root '.claude-plugin\plugin.json')) | ConvertFrom-Json).version } catch { Fail 'cannot read .claude-plugin\plugin.json' }
+if (-not $version) { Fail 'no version in .claude-plugin\plugin.json' }
 
 switch ($env:PROCESSOR_ARCHITECTURE) {
   'AMD64' { $arch = 'amd64' }
@@ -15,47 +25,49 @@ switch ($env:PROCESSOR_ARCHITECTURE) {
   default { Fail "unsupported CPU $($env:PROCESSOR_ARCHITECTURE); install with: go install github.com/$repo@latest" }
 }
 $asset = "perritite-windows-$arch.exe"
-$dir = Join-Path $env:LOCALAPPDATA "perritite\bin\$version"
-$bin = Join-Path $dir $asset
 
-if (-not (Test-Path $bin)) {
-  $base = "https://github.com/$repo/releases/download"
-  if ($env:PERRITITE_RELEASE_URL) {
-    # A test hook, honoured only for a local server: a downloaded binary is
-    # executed, so it must never come from anywhere but the release.
-    if ($env:PERRITITE_RELEASE_URL -notmatch '^http://(127\.0\.0\.1|localhost):\d+') {
-      Fail 'PERRITITE_RELEASE_URL must be http://127.0.0.1:<port> or http://localhost:<port>'
-    }
-    $base = $env:PERRITITE_RELEASE_URL
-  }
-  $url = "$base/v$version"
-  New-Item -ItemType Directory -Force -Path $dir | Out-Null
-  $tmp = Join-Path $dir (".download." + [guid]::NewGuid().ToString('N'))
-  try {
-    # .NET rather than cmdlets for download and hashing: Windows PowerShell
-    # started from pwsh 7 inherits a module path that breaks autoloading of
-    # cmdlets such as Get-FileHash.
-    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-    $client = New-Object Net.WebClient
-    try {
-      $client.DownloadFile("$url/$asset", $tmp)
-      $sums = $client.DownloadString("$url/SHA256SUMS")
-    } catch {
-      Fail "could not download from ${url}: $($_.Exception.Message)"
-    }
-    $want = $null
-    foreach ($line in ($sums -split "`n")) {
-      $parts = $line.Trim() -split '\s+'
-      if ($parts.Count -eq 2 -and ($parts[1] -eq $asset -or $parts[1] -eq "*$asset")) { $want = $parts[0] }
-    }
-    if (-not $want) { Fail "no checksum for $asset in SHA256SUMS" }
-    $sha = [Security.Cryptography.SHA256]::Create()
-    $stream = [IO.File]::OpenRead($tmp)
-    try { $got = -join ($sha.ComputeHash($stream) | ForEach-Object { $_.ToString('x2') }) } finally { $stream.Dispose() }
-    if ($got -ne $want.ToLowerInvariant()) { Fail "checksum mismatch for $asset; refusing to run it" }
-    Move-Item -Force $tmp $bin
-  } finally {
-    if (Test-Path $tmp) { Remove-Item -Force $tmp }
-  }
+$want = $null
+foreach ($line in [IO.File]::ReadAllLines((Join-Path $root 'launcher\SHA256SUMS'))) {
+  $parts = $line.Trim() -split '\s+'
+  if ($parts.Count -eq 2 -and ($parts[1] -eq $asset -or $parts[1] -eq "*$asset")) { $want = $parts[0].ToLowerInvariant() }
 }
-Write-Output $bin
+if (-not $want) { Fail "no checksum for $asset in launcher\SHA256SUMS" }
+
+function Sha256($path) {
+  $sha = [Security.Cryptography.SHA256]::Create()
+  $stream = [IO.File]::OpenRead($path)
+  try { return -join ($sha.ComputeHash($stream) | ForEach-Object { $_.ToString('x2') }) } finally { $stream.Dispose() }
+}
+
+if ([IO.File]::Exists($exe) -and (Sha256 $exe) -eq $want) { exit 0 }
+
+$url = "https://github.com/$repo/releases/download/v$version"
+if ($env:PERRITITE_RELEASE_URL) {
+  # A test hook, honoured only for a local server given exactly as
+  # http://127.0.0.1:<port> or http://localhost:<port>. The committed
+  # checksum is still enforced.
+  if ($env:PERRITITE_RELEASE_URL -notmatch '^http://(127\.0\.0\.1|localhost):[0-9]{1,5}\z') {
+    Fail 'PERRITITE_RELEASE_URL must be exactly http://127.0.0.1:<port> or http://localhost:<port>'
+  }
+  $url = "$($env:PERRITITE_RELEASE_URL)/v$version"
+}
+
+$tmp = Join-Path $bindir (".download." + [guid]::NewGuid().ToString('N'))
+try {
+  [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+  try {
+    (New-Object Net.WebClient).DownloadFile("$url/$asset", $tmp)
+  } catch {
+    Fail "could not download $url/${asset} (check your network or proxy): $($_.Exception.Message)"
+  }
+  if ((Sha256 $tmp) -ne $want) { Fail "checksum mismatch for $asset; refusing to run it" }
+  try {
+    [IO.File]::Copy($tmp, $exe, $true)
+  } catch {
+    # A concurrent first run may hold the exe open; fine if what's there verifies.
+    if (-not ([IO.File]::Exists($exe) -and (Sha256 $exe) -eq $want)) { Fail "could not install ${exe}: $($_.Exception.Message)" }
+  }
+} finally {
+  if ([IO.File]::Exists($tmp)) { [IO.File]::Delete($tmp) }
+}
+exit 0

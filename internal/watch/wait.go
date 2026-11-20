@@ -243,10 +243,17 @@ func (w *Waiter) run(ctx context.Context, opts Options) (Outcome, error) {
 			}
 		}
 	}
-	return s.loop(budget, me.UserID)
+	return s.loop(budget, me)
 }
 
-func (s *session) loop(budget *errorBudget, self string) (Outcome, error) {
+// own reports whether m was posted under the token's own identity: its
+// user id, or (for a classic app's bot, whose posts may carry no user) its
+// bot id.
+func own(m slack.Message, me slack.AuthInfo) bool {
+	return (m.User != "" && m.User == me.UserID) || (me.BotID != "" && m.BotID == me.BotID)
+}
+
+func (s *session) loop(budget *errorBudget, me slack.AuthInfo) (Outcome, error) {
 	w, opts, clock := s.w, s.opts, s.w.clock()
 	for {
 		msgs, err := s.poll()
@@ -288,7 +295,7 @@ func (s *session) loop(budget *errorBudget, self string) (Outcome, error) {
 		committed := false
 		for _, m := range thread.Newer(thread.SortUnique(msgs), s.seen) {
 			s.seen, s.st.LastActivity = m.TS, now.Unix()
-			if m.User != "" && m.User == self {
+			if own(m, me) {
 				// Our own post: never wakes anyone.
 				if len(s.pending) == 0 {
 					s.st.Cursor, committed = m.TS, true

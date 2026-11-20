@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     strategy:
@@ -12,8 +15,10 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
       - run: go vet ./...
@@ -28,9 +33,51 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/test-launcher.ps1
-      - name: Launchers are executable in git
+      - name: Launchers are executable, with the right line endings
         if: runner.os == 'Linux'
         run: |
-          for f in bin/perritite scripts/build-release.sh scripts/test-launcher.sh; do
+          for f in bin/perritite scripts/build-release.sh scripts/release-prep.sh scripts/test-launcher.sh; do
             git ls-files -s "$f" | grep -q '^100755' || { echo "$f is not 100755 in git"; exit 1; }
           done
+          ! grep -l $'\r' bin/perritite scripts/*.sh || { echo "CRLF in a shell script"; exit 1; }
+      - name: Shell launcher works from a Windows-style CRLF checkout
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          [ "$(git config core.autocrlf || true)" = true ] && echo "runner uses autocrlf=true"
+          ! grep -q $'\r' bin/perritite || { echo "bin/perritite was checked out with CRLF"; exit 1; }
+
+  # The plugin ships launcher/SHA256SUMS and the release must match it byte
+  # for byte, so builds must be identical on every host OS.
+  reproducible:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - shell: bash
+        run: scripts/build-release.sh 0.0.0 out && cp out/SHA256SUMS "sums-${{ runner.os }}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sums-${{ runner.os }}
+          path: sums-${{ runner.os }}
+
+  reproducible-compare:
+    needs: reproducible
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: sums
+          merge-multiple: true
+      - run: |
+          ls sums
+          diff sums/sums-Linux sums/sums-macOS
+          diff sums/sums-Linux sums/sums-Windows
+          echo "identical binaries on Linux, macOS and Windows"

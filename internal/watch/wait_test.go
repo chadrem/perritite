@@ -846,3 +846,15 @@ func TestLastPollIsSavedEvenWhenTheRunFails(t *testing.T) {
 		t.Fatalf("LastPollMS = %d, want %d", st.LastPollMS, h.clock.now.UnixMilli())
 	}
 }
+
+func TestABotsOwnPostsAreRecognisedByBotIDToo(t *testing.T) {
+	h := newHarness(t)
+	h.fake.OK("auth.test", map[string]any{"user_id": "UBOT", "bot_id": "B123"})
+	// A classic app's bot post can carry bot_id but no user.
+	h.thread.add(map[string]any{"ts": "1000000010.000000", "bot_id": "B123", "username": "Perritite", "text": "own post"})
+	h.postAt(map[int][3]string{2: {"1000000020.000000", "U2", "real"}})
+	h.run(watch.Options{After: "1000000000.000000"})
+	if strings.Contains(h.out.String(), "own post") || !strings.Contains(h.out.String(), "real") {
+		t.Fatalf("output: %s", h.out)
+	}
+}

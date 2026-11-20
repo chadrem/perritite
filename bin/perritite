@@ -1,8 +1,10 @@
 #!/bin/sh
 # Perritite launcher, shipped in the Claude Code plugin's bin/ (which Claude
-# Code puts on PATH). It runs the perritite binary for this plugin's version,
-# downloading it from the GitHub release on first use and checking it against
-# the release's SHA256SUMS. macOS, Linux, and Windows under Git Bash.
+# Code puts on PATH). It runs the perritite binary for this plugin's version:
+# downloaded from the GitHub release on first use, cached, and checked on
+# EVERY run against launcher/SHA256SUMS, which is committed in the plugin.
+# A binary is only ever run if it matches the commit you installed.
+# macOS, Linux, and Windows under Git Bash.
 set -eu
 
 die() {
@@ -12,14 +14,14 @@ die() {
 
 repo="chadrem/perritite"
 here=$(cd "$(dirname "$0")" && pwd)
-manifest="$(dirname "$here")/.claude-plugin/plugin.json"
-version=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$manifest" 2>/dev/null | head -n 1)
-[ -n "$version" ] || die "no version in $manifest"
+root=$(dirname "$here")
+version=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$root/.claude-plugin/plugin.json" 2>/dev/null | head -n 1)
+[ -n "$version" ] || die "no version in $root/.claude-plugin/plugin.json"
 
 case "$(uname -s)" in
 	Darwin) os=darwin ;;
 	Linux) os=linux ;;
-	MINGW* | MSYS* | CYGWIN*) os=windows ;;
+	MINGW* | MSYS* | CYGWIN* | *_NT*) os=windows ;;
 	*) die "unsupported OS $(uname -s); install with: go install github.com/$repo@latest" ;;
 esac
 case "$(uname -m)" in
@@ -30,40 +32,58 @@ esac
 ext=""
 [ "$os" = windows ] && ext=".exe"
 asset="perritite-$os-$arch$ext"
-dir="${XDG_CACHE_HOME:-$HOME/.cache}/perritite/bin/$version"
-bin="$dir/$asset"
 
-if [ ! -x "$bin" ]; then
-	base="https://github.com/$repo/releases/download"
-	if [ -n "${PERRITITE_RELEASE_URL:-}" ]; then
-		# A test hook, honoured only for a local server: a downloaded binary
-		# is executed, so it must never come from anywhere but the release.
-		case "$PERRITITE_RELEASE_URL" in
-			http://127.0.0.1:* | http://localhost:*) base="$PERRITITE_RELEASE_URL" ;;
-			*) die "PERRITITE_RELEASE_URL must be http://127.0.0.1:<port> or http://localhost:<port>" ;;
-		esac
-	fi
-	command -v curl >/dev/null 2>&1 || die "curl is required to download the perritite binary"
-	if command -v sha256sum >/dev/null 2>&1; then
-		sha() { sha256sum "$1" | awk '{print $1}'; }
-	elif command -v shasum >/dev/null 2>&1; then
-		sha() { shasum -a 256 "$1" | awk '{print $1}'; }
-	else
-		die "sha256sum or shasum is required to verify the download"
-	fi
-	mkdir -p "$dir"
-	tmp=$(mktemp "$dir/.download.XXXXXX")
-	trap 'rm -f "$tmp" "$tmp.sums"' EXIT
-	url="$base/v$version"
-	curl -fsSL --retry 3 -o "$tmp" "$url/$asset" || die "could not download $url/$asset"
-	curl -fsSL --retry 3 -o "$tmp.sums" "$url/SHA256SUMS" || die "could not download $url/SHA256SUMS"
-	want=$(awk -v a="$asset" '$2 == a || $2 == "*" a { print $1 }' "$tmp.sums")
-	[ -n "$want" ] || die "no checksum for $asset in SHA256SUMS"
-	[ "$(sha "$tmp")" = "$want" ] || die "checksum mismatch for $asset; refusing to run it"
-	chmod +x "$tmp"
-	mv -f "$tmp" "$bin"
-	rm -f "$tmp.sums"
-	trap - EXIT
+want=$(awk -v a="$asset" '$2 == a || $2 == "*" a { print $1 }' "$root/launcher/SHA256SUMS" 2>/dev/null)
+[ -n "$want" ] || die "no checksum for $asset in $root/launcher/SHA256SUMS"
+if command -v sha256sum >/dev/null 2>&1; then
+	sha() { sha256sum "$1" | awk '{print $1}'; }
+elif command -v shasum >/dev/null 2>&1; then
+	sha() { shasum -a 256 "$1" | awk '{print $1}'; }
+else
+	die "sha256sum or shasum is required to verify the binary"
 fi
 
+cache="${XDG_CACHE_HOME:-}"
+case "$cache" in /*) ;; *) cache="$HOME/.cache" ;; esac # the XDG spec ignores relative paths
+dir="$cache/perritite/bin/$version"
+bin="$dir/$asset"
+
+if [ -f "$bin" ] && [ "$(sha "$bin")" = "$want" ]; then
+	exec "$bin" "$@"
+fi
+
+# Missing, stale or tampered: (re)download and verify.
+url="https://github.com/$repo/releases/download/v$version"
+proto="--proto =https --proto-redir =https"
+if [ -n "${PERRITITE_RELEASE_URL:-}" ]; then
+	# A test hook, honoured only for a local server given exactly as
+	# http://127.0.0.1:<port> or http://localhost:<port>. The committed
+	# checksum is still enforced.
+	port=""
+	case "$PERRITITE_RELEASE_URL" in
+		http://127.0.0.1:*) port=${PERRITITE_RELEASE_URL#http://127.0.0.1:} ;;
+		http://localhost:*) port=${PERRITITE_RELEASE_URL#http://localhost:} ;;
+	esac
+	case "$port" in
+		"" | *[!0-9]*) die "PERRITITE_RELEASE_URL must be exactly http://127.0.0.1:<port> or http://localhost:<port>" ;;
+	esac
+	url="$PERRITITE_RELEASE_URL/v$version"
+	proto=""
+fi
+command -v curl >/dev/null 2>&1 || die "curl is required to download the perritite binary"
+mkdir -p "$dir"
+tmp=$(mktemp "$dir/.download.XXXXXX")
+trap 'rm -f "$tmp"' EXIT
+# shellcheck disable=SC2086 # $proto is deliberately split into flags
+curl -fsSL --retry 3 $proto -o "$tmp" "$url/$asset" ||
+	die "could not download $url/$asset (check your network or proxy)"
+[ "$(sha "$tmp")" = "$want" ] || die "checksum mismatch for $asset; refusing to run it"
+chmod +x "$tmp"
+if ! mv -f "$tmp" "$bin" 2>/dev/null; then
+	# A concurrent first run may have won (Windows can't replace a running
+	# exe); fine, as long as what's there verifies.
+	[ -f "$bin" ] && [ "$(sha "$bin")" = "$want" ] || die "could not install $bin"
+fi
+trap - EXIT
+rm -f "$tmp"
 exec "$bin" "$@"
