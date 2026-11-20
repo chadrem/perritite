@@ -1,6 +1,6 @@
 ---
 name: slack-thread
-description: Collaborate in a Slack thread from Claude Code: read the thread (messages and screenshots), reply with @-mentions and file uploads, via the slack-thread CLI. Use when the user gives you a Slack thread URL to read, reply in, or work from. The user is the decision-maker; you are the engineer doing the work and talking to everyone.
+description: Collaborate in a Slack thread from Claude Code: read the thread (messages and screenshots), reply with @-mentions and file uploads, via the perritite CLI. Use when the user gives you a Slack thread URL to read, reply in, or work from. The user is the decision-maker; you are the engineer doing the work and talking to everyone.
 ---
 
 # Working a Slack thread
@@ -13,22 +13,22 @@ communicating with everyone).
 ## Commands
 
 ```bash
-slack-thread read <thread-url>                 # full transcript, oldest first
-slack-thread read <url> --after <ts>           # only messages after a ts (incremental catch-up)
-slack-thread read <url> --json                 # structured output
-slack-thread post <url> "message"              # reply in the thread
-slack-thread post <url> - < reply.md           # multi-line reply from a file or stdin
-slack-thread post <url> "caption" --file shot.png   # upload screenshot(s) into the thread
-slack-thread users <query>                     # find people (id, name, handle)
-slack-thread whoami                            # the identity your posts appear as
-slack-thread config                            # where the token, state and downloads come from
+perritite read <thread-url>                 # full transcript, oldest first
+perritite read <url> --after <ts>           # only messages after a ts (incremental catch-up)
+perritite read <url> --json                 # structured output
+perritite post <url> "message"              # reply in the thread
+perritite post <url> - < reply.md           # multi-line reply from a file or stdin
+perritite post <url> "caption" --file shot.png   # upload screenshot(s) into the thread
+perritite users <query>                     # find people (id, name, handle)
+perritite whoami                            # the identity your posts appear as
+perritite config                            # where the token, state and downloads come from
 ```
 
 Every message in `read` output shows its `ts`. Use the newest one with
 `--after` on the next read instead of re-reading the whole thread.
 
-If `slack-thread` reports no token, stop and tell the user. They set it up
-once (see `slack-thread help`); never ask them to paste a token into the chat.
+If `perritite` reports no token, stop and tell the user. They set it up
+once (see `perritite help`); never ask them to paste a token into the chat.
 
 ## Screenshots and files
 
@@ -46,7 +46,7 @@ once (see `slack-thread help`); never ask them to paste a token into the chat.
   as plain text with a warning on stderr.
 - Never use `@here` / `@channel` unless the user explicitly asks for a
   channel-wide ping.
-- Unsure of a name? Run `slack-thread users <query>` first.
+- Unsure of a name? Run `perritite users <query>` first.
 - Text containing git revision syntax (`@{u}`, `@{upstream}`) trips the strict
   parser. Send it with `--raw`. Mid-word forms like `stash@{0}` are fine.
 
@@ -69,7 +69,7 @@ once (see `slack-thread help`); never ask them to paste a token into the chat.
 - **Keep replies short and concrete.** People read on phones. Lead with the
   answer; add detail only if asked.
 - **Say who you are.** Your posts appear under the token's identity
-  (`slack-thread whoami`). If the thread doesn't already know Claude is
+  (`perritite whoami`). If the thread doesn't already know Claude is
   driving it, say so in your first message, e.g. "Claude here, working with
   <user> on this".
 - **Project rules win.** If the project's CLAUDE.md has a Slack section

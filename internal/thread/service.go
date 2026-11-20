@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chadrem/slack-thread/internal/frame"
-	"github.com/chadrem/slack-thread/internal/slack"
+	"github.com/chadrem/perritite/internal/frame"
+	"github.com/chadrem/perritite/internal/slack"
 )
 
 // MaxDownloadBytes caps attachment downloads.

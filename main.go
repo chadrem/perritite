@@ -1,11 +1,11 @@
-// Command slack-thread reads, writes and waits on Slack threads, built for
+// Command perritite reads, writes and waits on Slack threads, built for
 // Claude Code sessions that collaborate in Slack. See README.md.
 package main
 
 import (
 	"os"
 
-	"github.com/chadrem/slack-thread/internal/cli"
+	"github.com/chadrem/perritite/internal/cli"
 )
 
 // version is stamped by the release build (-ldflags "-X main.version=...").

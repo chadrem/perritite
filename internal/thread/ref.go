@@ -1,4 +1,4 @@
-// Package thread is slack-thread's core: parse Slack URLs, read threads into
+// Package thread is perritite's core: parse Slack URLs, read threads into
 // normalized messages, post with mention resolution, download attachments.
 package thread
 

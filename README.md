@@ -1,23 +1,23 @@
-# slack-thread
+# Perritite
 
 **Slack threads for [Claude Code](https://claude.com/claude-code): read them,
 reply in them, and watch them live, waking the model only when someone
 actually posts.**
 
-`slack-thread` is a small command-line tool plus two Claude Code skills. Give
+`perritite` is a small command-line tool plus two Claude Code skills. Give
 Claude a thread URL and it reads the conversation (screenshots included),
 replies with real @-mentions and file uploads, and can stay in the thread for
 hours, answering as messages arrive.
 
 ```console
-$ slack-thread read https://acme.slack.com/archives/C0123ABCDEF/p1752241234567890
+$ perritite read https://acme.slack.com/archives/C0123ABCDEF/p1752241234567890
 #eng-checkout (C0123ABCDEF) — thread 1752241234.567890 — 3 messages
 
 [1] Dana Ortiz (U01AAAA) — 2026-07-11 10:20:34 PDT (ts 1752241234.567890)
   Checkout is double-charging when the coupon field is blank?
-  [file] repro.png (image/png, 212.4 KB) -> ~/.cache/slack-thread/files/C0123ABCDEF/1752241234567890/F07-repro.png
+  [file] repro.png (image/png, 212.4 KB) -> ~/.cache/perritite/files/C0123ABCDEF/1752241234567890/F07-repro.png
 ...
-$ slack-thread post <url> "Reproduced. It's the retry on a 502; fix incoming. cc @{Dana Ortiz}"
+$ perritite post <url> "Reproduced. It's the retry on a 502; fix incoming. cc @{Dana Ortiz}"
 posted ts=1752241300.000100
 ```
 
@@ -39,7 +39,7 @@ Using Claude Code's Monitor tool to stream a thread wakes the model for:
 In one real day-long watch, those wakeups re-read as many tokens as the
 wakeups for real messages did.
 
-`slack-thread wait` is built the other way round. It runs as a background
+`perritite wait` is built the other way round. It runs as a background
 command whose **exit is the notification**:
 
 - prints nothing while waiting;
@@ -57,8 +57,8 @@ wakeup.
 ### As a Claude Code plugin (skills)
 
 ```text
-/plugin marketplace add chadrem/slack-thread
-/plugin install slack-thread@slack-thread
+/plugin marketplace add chadrem/perritite
+/plugin install perritite@perritite
 ```
 
 This installs the `slack-thread` and `slack-monitor` skills. You also need
@@ -69,7 +69,7 @@ the binary on your `PATH`:
 With Go 1.23 or later:
 
 ```sh
-go install github.com/chadrem/slack-thread@latest
+go install github.com/chadrem/perritite@latest
 ```
 
 Prebuilt binaries for macOS, Linux and Windows (amd64 and arm64) will be
@@ -81,7 +81,7 @@ commands that work there unchanged.
 
 ## Slack setup
 
-`slack-thread` needs a Slack token that can read and post in the threads you
+`perritite` needs a Slack token that can read and post in the threads you
 work in. Create an app at <https://api.slack.com/apps> and install it to your
 workspace. Either kind of token works:
 
@@ -115,16 +115,16 @@ poll is one small request. Internal apps are not affected.
 Never paste a token into a chat. Pick one of:
 
 ```sh
-export SLACK_THREAD_TOKEN=xoxb-...          # environment variable
+export PERRITITE_TOKEN=xoxb-...          # environment variable
 ```
 
-or a config file at `~/.config/slack-thread/config.json`
-(`%AppData%\slack-thread\config.json` on Windows; `slack-thread config` shows
+or a config file at `~/.config/perritite/config.json`
+(`%AppData%\perritite\config.json` on Windows; `perritite config` shows
 the exact path):
 
 ```json
 {
-  "token_command": "security find-generic-password -s slack-thread -w",
+  "token_command": "security find-generic-password -s perritite -w",
   "owner_user_ids": ["U0123ABCD"]
 }
 ```
@@ -134,7 +134,7 @@ the exact path):
 | `token` | The token itself (keep the file private). |
 | `token_file` | Path to a file containing the token. |
 | `token_command` | A command that prints the token (Keychain, `pass`, 1Password CLI...). Runs with `sh -c`, or `cmd /C` on Windows. |
-| `owner_user_ids` | Slack user ids whose in-thread messages carry **your** authority. The waiter tags them `role=owner`. Usually just your own id (`slack-thread users <your name>`). |
+| `owner_user_ids` | Slack user ids whose in-thread messages carry **your** authority. The waiter tags them `role=owner`. Usually just your own id (`perritite users <your name>`). |
 | `download_dir` | Where attachments are saved (default: the OS cache dir). |
 | `state_dir` | Where waiters keep their cursors and locks. |
 | `as_user` | Send `as_user=true` on posts (default `true`). |
@@ -143,15 +143,15 @@ the exact path):
 
 | Platform | Store the token | `token_command` |
 |---|---|---|
-| macOS | `security add-generic-password -s slack-thread -a "$USER" -w` (prompts) | `security find-generic-password -s slack-thread -w` |
-| Linux (GNOME keyring / libsecret) | `secret-tool store --label=slack-thread service slack-thread` (prompts) | `secret-tool lookup service slack-thread` |
-| Linux (`pass`) | `pass insert slack-thread` | `pass show slack-thread` |
-| Windows | `Set-Secret slack-thread` ([SecretManagement](https://learn.microsoft.com/powershell/utility-modules/secretmanagement/overview)) | `powershell -NoProfile -Command "Get-Secret slack-thread -AsPlainText"` |
+| macOS | `security add-generic-password -s perritite -a "$USER" -w` (prompts) | `security find-generic-password -s perritite -w` |
+| Linux (GNOME keyring / libsecret) | `secret-tool store --label=perritite service perritite` (prompts) | `secret-tool lookup service perritite` |
+| Linux (`pass`) | `pass insert perritite` | `pass show perritite` |
+| Windows | `Set-Secret perritite` ([SecretManagement](https://learn.microsoft.com/powershell/utility-modules/secretmanagement/overview)) | `powershell -NoProfile -Command "Get-Secret perritite -AsPlainText"` |
 | Anywhere | a file only you can read | use `token_file` instead |
 
-The environment variables `SLACK_THREAD_TOKEN`, `SLACK_THREAD_OWNER_IDS`
-(comma-separated), `SLACK_THREAD_STATE_DIR`, `SLACK_THREAD_DOWNLOAD_DIR` and
-`SLACK_THREAD_CONFIG` override the file.
+The environment variables `PERRITITE_TOKEN`, `PERRITITE_OWNER_IDS`
+(comma-separated), `PERRITITE_STATE_DIR`, `PERRITITE_DOWNLOAD_DIR` and
+`PERRITITE_CONFIG` override the file.
 
 There is deliberately **no per-project config file**: a repository you clone
 must never be able to choose the command that produces your token.
@@ -179,7 +179,7 @@ Mentions in `post`:
 - `@here` and `@channel` work, but the skills never use them unless asked.
 
 A message that starts with `--` goes after a `--` separator:
-`slack-thread post <url> -- "--force is the flag"`.
+`perritite post <url> -- "--force is the flag"`.
 
 ## The `wait` protocol
 
@@ -192,7 +192,7 @@ A message that starts with `--` goes after a `--` separator:
 | `KEEPWARM` | Opt-in: no messages, exiting so the model's prompt cache stays warm |
 | `RESTART` | `--max-run` reached (for hosts that cap background commands) |
 | `ALREADY` | Another waiter already watches this thread (one per thread, enforced with an OS file lock that dies with its process) |
-| `STOPPED` | Stopped by `slack-thread stop`, a signal, or `--replace` |
+| `STOPPED` | Stopped by `perritite stop`, a signal, or `--replace` |
 | `ERROR` | Slack failed for longer than the waiter rides out (10 minutes of transient errors, or any auth/permission error) |
 
 **Thread content cannot impersonate the protocol.** Headers start at column

@@ -1,4 +1,4 @@
-# slack-thread
+# Perritite
 
 A Go CLI plus two Claude Code skills (`skills/slack-thread`,
 `skills/slack-monitor`) for working in Slack threads from a Claude Code

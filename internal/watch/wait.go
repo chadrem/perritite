@@ -1,4 +1,4 @@
-// Package watch implements `slack-thread wait`: block until someone else
+// Package watch implements `perritite wait`: block until someone else
 // posts in a thread, print what they said, and exit.
 //
 // It exists to make a monitored thread cost one model wakeup per real
@@ -15,9 +15,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/chadrem/slack-thread/internal/frame"
-	"github.com/chadrem/slack-thread/internal/slack"
-	"github.com/chadrem/slack-thread/internal/thread"
+	"github.com/chadrem/perritite/internal/frame"
+	"github.com/chadrem/perritite/internal/slack"
+	"github.com/chadrem/perritite/internal/thread"
 )
 
 // Clock is wall time plus an interruptible sleep; tests substitute a fake.

@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chadrem/slack-thread/internal/slack"
-	"github.com/chadrem/slack-thread/internal/slacktest"
+	"github.com/chadrem/perritite/internal/slack"
+	"github.com/chadrem/perritite/internal/slacktest"
 )
 
 func newClient(fake *slacktest.Server, sleeps *[]time.Duration) *slack.Client {

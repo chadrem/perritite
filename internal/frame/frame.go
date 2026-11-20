@@ -1,4 +1,4 @@
-// Package frame keeps thread-authored text from impersonating slack-thread's
+// Package frame keeps thread-authored text from impersonating perritite's
 // own output. Protocol and header lines start at column 0; every line of
 // content is indented with a fixed prefix, and anything a reader might take
 // as a line break is treated as one, so content can never begin a line.

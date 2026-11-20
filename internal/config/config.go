@@ -1,4 +1,4 @@
-// Package config resolves slack-thread's settings: a JSON file in the
+// Package config resolves perritite's settings: a JSON file in the
 // user's config directory, overridden by environment variables. There is
 // deliberately no per-project config file: a repo you clone must never be
 // able to choose the command that produces your Slack token.
@@ -23,7 +23,7 @@ import (
 // File is the on-disk config (all fields optional).
 type File struct {
 	// Exactly one way to get the token; the first non-empty wins in this
-	// order after the SLACK_THREAD_TOKEN env var.
+	// order after the PERRITITE_TOKEN env var.
 	Token        string `json:"token,omitempty"`
 	TokenFile    string `json:"token_file,omitempty"`
 	TokenCommand string `json:"token_command,omitempty"`
@@ -46,20 +46,20 @@ type Config struct {
 	DownloadDir string
 	StateDir    string
 	AsUser      bool
-	APIURL      string // test hook: SLACK_THREAD_API_URL
+	APIURL      string // test hook: PERRITITE_API_URL
 	getenv      func(string) string
 }
 
 // Load reads the config file (if any) and applies environment overrides.
 func Load(getenv func(string) string) (*Config, error) {
 	c := &Config{getenv: getenv, AsUser: true}
-	c.Path = getenv("SLACK_THREAD_CONFIG")
+	c.Path = getenv("PERRITITE_CONFIG")
 	if c.Path == "" {
 		dir, err := configDir(getenv)
 		if err != nil {
 			return nil, err
 		}
-		c.Path = filepath.Join(dir, "slack-thread", "config.json")
+		c.Path = filepath.Join(dir, "perritite", "config.json")
 	}
 	data, err := os.ReadFile(c.Path)
 	switch {
@@ -73,34 +73,34 @@ func Load(getenv func(string) string) (*Config, error) {
 	}
 
 	c.Owners = c.File.OwnerUserIDs
-	if v := getenv("SLACK_THREAD_OWNER_IDS"); v != "" {
+	if v := getenv("PERRITITE_OWNER_IDS"); v != "" {
 		c.Owners = splitList(v)
 	}
 	if c.File.AsUser != nil {
 		c.AsUser = *c.File.AsUser
 	}
-	c.DownloadDir = firstNonEmpty(getenv("SLACK_THREAD_DOWNLOAD_DIR"), expandHome(c.File.DownloadDir, getenv))
+	c.DownloadDir = firstNonEmpty(getenv("PERRITITE_DOWNLOAD_DIR"), expandHome(c.File.DownloadDir, getenv))
 	if c.DownloadDir == "" {
 		cache, err := cacheDir(getenv)
 		if err != nil {
 			return nil, err
 		}
-		c.DownloadDir = filepath.Join(cache, "slack-thread", "files")
+		c.DownloadDir = filepath.Join(cache, "perritite", "files")
 	}
-	c.StateDir = firstNonEmpty(getenv("SLACK_THREAD_STATE_DIR"), expandHome(c.File.StateDir, getenv))
+	c.StateDir = firstNonEmpty(getenv("PERRITITE_STATE_DIR"), expandHome(c.File.StateDir, getenv))
 	if c.StateDir == "" {
 		state, err := stateDir(getenv)
 		if err != nil {
 			return nil, err
 		}
-		c.StateDir = filepath.Join(state, "slack-thread")
+		c.StateDir = filepath.Join(state, "perritite")
 	}
-	if v := getenv("SLACK_THREAD_API_URL"); v != "" {
+	if v := getenv("PERRITITE_API_URL"); v != "" {
 		// A test hook: honoured only for loopback hosts, so an environment
 		// variable can never send the token anywhere else.
 		u, err := url.Parse(v)
 		if err != nil || !loopback(u.Hostname()) {
-			return nil, fmt.Errorf("SLACK_THREAD_API_URL must point at localhost (it is a test hook), not %q", v)
+			return nil, fmt.Errorf("PERRITITE_API_URL must point at localhost (it is a test hook), not %q", v)
 		}
 		c.APIURL = v
 	}
@@ -110,8 +110,8 @@ func Load(getenv func(string) string) (*Config, error) {
 // TokenSource describes where the token comes from, without revealing it.
 func (c *Config) TokenSource() string {
 	switch {
-	case c.getenv("SLACK_THREAD_TOKEN") != "":
-		return "SLACK_THREAD_TOKEN environment variable"
+	case c.getenv("PERRITITE_TOKEN") != "":
+		return "PERRITITE_TOKEN environment variable"
 	case c.File.Token != "":
 		return "token in " + c.Path
 	case c.File.TokenFile != "":
@@ -125,7 +125,7 @@ func (c *Config) TokenSource() string {
 
 // Token resolves the Slack token.
 func (c *Config) Token(ctx context.Context) (string, error) {
-	if t := strings.TrimSpace(c.getenv("SLACK_THREAD_TOKEN")); t != "" {
+	if t := strings.TrimSpace(c.getenv("PERRITITE_TOKEN")); t != "" {
 		return t, nil
 	}
 	if t := strings.TrimSpace(c.File.Token); t != "" {
@@ -144,7 +144,7 @@ func (c *Config) Token(ctx context.Context) (string, error) {
 	if c.File.TokenCommand != "" {
 		return runTokenCommand(ctx, c.File.TokenCommand)
 	}
-	return "", fmt.Errorf("no Slack token: set SLACK_THREAD_TOKEN, or token / token_file / token_command in %s (see `slack-thread help`)", c.Path)
+	return "", fmt.Errorf("no Slack token: set PERRITITE_TOKEN, or token / token_file / token_command in %s (see `perritite help`)", c.Path)
 }
 
 // tokenWaitDelay bounds how long a token_command's leftover children may

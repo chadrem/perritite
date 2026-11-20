@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chadrem/slack-thread/internal/frame"
-	"github.com/chadrem/slack-thread/internal/slack"
-	"github.com/chadrem/slack-thread/internal/slacktest"
-	"github.com/chadrem/slack-thread/internal/thread"
-	"github.com/chadrem/slack-thread/internal/watch"
+	"github.com/chadrem/perritite/internal/frame"
+	"github.com/chadrem/perritite/internal/slack"
+	"github.com/chadrem/perritite/internal/slacktest"
+	"github.com/chadrem/perritite/internal/thread"
+	"github.com/chadrem/perritite/internal/watch"
 )
 
 const threadURL = "https://x.slack.com/archives/C0123ABCDEF/p1000000000000000"

@@ -17,7 +17,7 @@ import (
 
 	"net/url"
 
-	"github.com/chadrem/slack-thread/internal/slacktest"
+	"github.com/chadrem/perritite/internal/slacktest"
 )
 
 const threadURL = "https://x.slack.com/archives/C0123ABCDEF/p1752241234567890"
@@ -25,11 +25,11 @@ const threadURL = "https://x.slack.com/archives/C0123ABCDEF/p1752241234567890"
 var binary string
 
 func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "slack-thread-e2e")
+	dir, err := os.MkdirTemp("", "perritite-e2e")
 	if err != nil {
 		panic(err)
 	}
-	binary = filepath.Join(dir, "slack-thread")
+	binary = filepath.Join(dir, "perritite")
 	if runtime.GOOS == "windows" {
 		binary += ".exe"
 	}
@@ -52,11 +52,11 @@ func newWorld(t *testing.T) *world {
 	w := &world{fake: slacktest.New(t), msgs: []map[string]any{slacktest.Msg("1752241234.567890", "U1", "root")}}
 	dir := t.TempDir()
 	w.env = append(os.Environ(),
-		"SLACK_THREAD_TOKEN=xoxb-test",
-		"SLACK_THREAD_API_URL="+w.fake.APIURL(),
-		"SLACK_THREAD_CONFIG="+filepath.Join(dir, "none.json"),
-		"SLACK_THREAD_STATE_DIR="+filepath.Join(dir, "state"),
-		"SLACK_THREAD_DOWNLOAD_DIR="+filepath.Join(dir, "files"),
+		"PERRITITE_TOKEN=xoxb-test",
+		"PERRITITE_API_URL="+w.fake.APIURL(),
+		"PERRITITE_CONFIG="+filepath.Join(dir, "none.json"),
+		"PERRITITE_STATE_DIR="+filepath.Join(dir, "state"),
+		"PERRITITE_DOWNLOAD_DIR="+filepath.Join(dir, "files"),
 	)
 	w.fake.OK("auth.test", map[string]any{"user_id": "UME"})
 	w.fake.Members(slacktest.DefaultMembers())
@@ -193,7 +193,7 @@ func TestReadAndPostThroughTheBinary(t *testing.T) {
 		t.Fatalf("text %q", got)
 	}
 	sc := bufio.NewScanner(strings.NewReader(w.run(t, "version")))
-	if !sc.Scan() || sc.Text() != "slack-thread dev" {
+	if !sc.Scan() || sc.Text() != "perritite dev" {
 		t.Fatalf("version: %q", sc.Text())
 	}
 }

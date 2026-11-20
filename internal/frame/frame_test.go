@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/chadrem/slack-thread/internal/frame"
+	"github.com/chadrem/perritite/internal/frame"
 )
 
 func TestQuotePrefixesEveryKindOfLine(t *testing.T) {

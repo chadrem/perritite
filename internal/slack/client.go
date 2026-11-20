@@ -1,5 +1,5 @@
 // Package slack is a minimal Slack Web API client: just the methods
-// slack-thread needs, over net/http, with rate-limit retries and cursor
+// perritite needs, over net/http, with rate-limit retries and cursor
 // pagination. No third-party dependencies.
 package slack
 
@@ -408,7 +408,7 @@ func (c *Client) UserInfo(ctx context.Context, id string) (Member, error) {
 	return out.User, err
 }
 
-// PostParams are the chat.postMessage fields slack-thread uses.
+// PostParams are the chat.postMessage fields perritite uses.
 type PostParams struct {
 	Channel   string
 	Text      string

@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chadrem/slack-thread/internal/cli"
-	"github.com/chadrem/slack-thread/internal/slacktest"
+	"github.com/chadrem/perritite/internal/cli"
+	"github.com/chadrem/perritite/internal/slacktest"
 )
 
 const threadURL = "https://x.slack.com/archives/C0123ABCDEF/p1752241234567890"
@@ -36,11 +36,11 @@ func newEnv(t *testing.T) *env {
 	fake.Members(slacktest.DefaultMembers())
 	dir := t.TempDir()
 	return &env{t: t, fake: fake, wd: dir, vars: map[string]string{
-		"SLACK_THREAD_TOKEN":        "xoxb-test",
-		"SLACK_THREAD_API_URL":      fake.APIURL(),
-		"SLACK_THREAD_CONFIG":       filepath.Join(dir, "missing-config.json"),
-		"SLACK_THREAD_STATE_DIR":    filepath.Join(dir, "state"),
-		"SLACK_THREAD_DOWNLOAD_DIR": filepath.Join(dir, "files"),
+		"PERRITITE_TOKEN":        "xoxb-test",
+		"PERRITITE_API_URL":      fake.APIURL(),
+		"PERRITITE_CONFIG":       filepath.Join(dir, "missing-config.json"),
+		"PERRITITE_STATE_DIR":    filepath.Join(dir, "state"),
+		"PERRITITE_DOWNLOAD_DIR": filepath.Join(dir, "files"),
 	}}
 }
 
@@ -88,7 +88,7 @@ func TestReadRendersATranscriptWithFilesAndReactions(t *testing.T) {
 		"  two\n  lines",
 		"[2] Abby Holtz (U2) — ",
 		"(edited) (ts 1752241300.000100)",
-		"[file] shot.png (image/png, 2.0 KB) -> "+filepath.Join(e.vars["SLACK_THREAD_DOWNLOAD_DIR"], "C0123ABCDEF", "1752241234567890", "F1-shot.png"),
+		"[file] shot.png (image/png, 2.0 KB) -> "+filepath.Join(e.vars["PERRITITE_DOWNLOAD_DIR"], "C0123ABCDEF", "1752241234567890", "F1-shot.png"),
 		"[reactions] :+1: x2")
 }
 
@@ -207,16 +207,16 @@ func TestSlackFailuresExitCleanly(t *testing.T) {
 
 func TestMissingTokenSaysHowToConfigureIt(t *testing.T) {
 	e := newEnv(t)
-	delete(e.vars, "SLACK_THREAD_TOKEN")
+	delete(e.vars, "PERRITITE_TOKEN")
 	r := e.run("", "whoami")
-	if r.code != 1 || !strings.Contains(r.stderr, "SLACK_THREAD_TOKEN") {
+	if r.code != 1 || !strings.Contains(r.stderr, "PERRITITE_TOKEN") {
 		t.Fatalf("%+v", r)
 	}
 }
 
 func TestWaitPrintsTheEventAndResumesWithNoArguments(t *testing.T) {
 	e := newEnv(t)
-	e.vars["SLACK_THREAD_OWNER_IDS"] = "U2"
+	e.vars["PERRITITE_OWNER_IDS"] = "U2"
 	e.fake.OK("auth.test", map[string]any{"user_id": "UME"})
 	msgs := []map[string]any{slacktest.Msg("1752241234.567890", "U1", "root"), slacktest.Msg("1752241300.000000", "U2", "proceed")}
 	e.fake.On("conversations.replies", func(url.Values) slacktest.Response {
@@ -237,7 +237,7 @@ func TestWaitPrintsTheEventAndResumesWithNoArguments(t *testing.T) {
 
 func TestWaitReportsSetupErrorsOnStdout(t *testing.T) {
 	e := newEnv(t)
-	delete(e.vars, "SLACK_THREAD_TOKEN")
+	delete(e.vars, "PERRITITE_TOKEN")
 	r := e.run("", "wait", threadURL)
 	if r.code != 1 || !strings.HasPrefix(r.stdout, "ERROR: no Slack token") {
 		t.Fatalf("a background run is read from stdout; %+v", r)
@@ -276,11 +276,11 @@ func TestWhoamiRendersThePostingIdentity(t *testing.T) {
 
 func TestConfigShowsSourcesWithoutTheToken(t *testing.T) {
 	e := newEnv(t)
-	cfgPath := e.vars["SLACK_THREAD_CONFIG"]
+	cfgPath := e.vars["PERRITITE_CONFIG"]
 	if err := os.WriteFile(cfgPath, []byte(`{"token_command":"echo secret-token","owner_user_ids":["UOWNER"]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	delete(e.vars, "SLACK_THREAD_TOKEN")
+	delete(e.vars, "PERRITITE_TOKEN")
 	r := e.run("", "config")
 	mustContain(t, r.stdout, "config file:  "+cfgPath+"\n", "token from:   token_command in", "owners:       UOWNER")
 	if strings.Contains(r.stdout, "secret-token") {
@@ -290,13 +290,13 @@ func TestConfigShowsSourcesWithoutTheToken(t *testing.T) {
 
 func TestHelpAndVersion(t *testing.T) {
 	e := newEnv(t)
-	if r := e.run("", "help"); !strings.HasPrefix(r.stdout, "Usage: slack-thread") {
+	if r := e.run("", "help"); !strings.HasPrefix(r.stdout, "Usage: perritite") {
 		t.Fatalf("%+v", r)
 	}
-	if r := e.run(""); !strings.HasPrefix(r.stdout, "Usage: slack-thread") {
+	if r := e.run(""); !strings.HasPrefix(r.stdout, "Usage: perritite") {
 		t.Fatalf("%+v", r)
 	}
-	if r := e.run("", "version"); r.stdout != "slack-thread test\n" {
+	if r := e.run("", "version"); r.stdout != "perritite test\n" {
 		t.Fatalf("%+v", r)
 	}
 }
@@ -327,7 +327,7 @@ func TestExtraArgumentsAreRejectedAndDoubleDashEndsFlags(t *testing.T) {
 
 func TestTheAPIURLHookOnlyAcceptsLoopback(t *testing.T) {
 	e := newEnv(t)
-	e.vars["SLACK_THREAD_API_URL"] = "https://attacker.example/api/"
+	e.vars["PERRITITE_API_URL"] = "https://attacker.example/api/"
 	if r := e.run("", "whoami"); r.code != 1 || !strings.Contains(r.stderr, "must point at localhost") {
 		t.Fatalf("%+v", r)
 	}

@@ -16,15 +16,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/chadrem/slack-thread/internal/config"
-	"github.com/chadrem/slack-thread/internal/frame"
-	"github.com/chadrem/slack-thread/internal/slack"
-	"github.com/chadrem/slack-thread/internal/thread"
-	"github.com/chadrem/slack-thread/internal/watch"
+	"github.com/chadrem/perritite/internal/config"
+	"github.com/chadrem/perritite/internal/frame"
+	"github.com/chadrem/perritite/internal/slack"
+	"github.com/chadrem/perritite/internal/thread"
+	"github.com/chadrem/perritite/internal/watch"
 )
 
-// Usage is printed by `slack-thread help`.
-const Usage = `Usage: slack-thread <command> [args]
+// Usage is printed by `perritite help`.
+const Usage = `Usage: perritite <command> [args]
 
 Commands:
   read <url> [--after TS] [--limit N] [--no-download] [--json]
@@ -51,8 +51,8 @@ Commands:
   config            Show where settings, state and downloads live.
   version           Print the version.
 
-Token: SLACK_THREAD_TOKEN, or token / token_file / token_command in the
-config file (see 'slack-thread config' for its path).
+Token: PERRITITE_TOKEN, or token / token_file / token_command in the
+config file (see 'perritite config' for its path).
 `
 
 // Env is the process environment, injectable for tests.
@@ -111,7 +111,7 @@ func (c *cmd) run(args []string) error {
 		fmt.Fprint(c.env.Stdout, Usage)
 		return nil
 	case "version", "--version":
-		fmt.Fprintln(c.env.Stdout, "slack-thread "+c.env.Version)
+		fmt.Fprintln(c.env.Stdout, "perritite "+c.env.Version)
 		return nil
 	case "read":
 		return c.read()

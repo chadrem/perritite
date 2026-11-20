@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chadrem/slack-thread/internal/config"
+	"github.com/chadrem/perritite/internal/config"
 )
 
 func load(t *testing.T, vars map[string]string, file string) *config.Config {
@@ -24,7 +24,7 @@ func load(t *testing.T, vars map[string]string, file string) *config.Config {
 	if vars == nil {
 		vars = map[string]string{}
 	}
-	vars["SLACK_THREAD_CONFIG"] = path
+	vars["PERRITITE_CONFIG"] = path
 	if _, ok := vars["XDG_STATE_HOME"]; !ok {
 		vars["XDG_STATE_HOME"] = filepath.Join(dir, "state")
 	}
@@ -45,7 +45,7 @@ func TestTokenPrecedenceEnvThenTokenThenFileThenCommand(t *testing.T) {
 	_ = os.WriteFile(tokenFile, []byte("from-file\n"), 0o600)
 	file := `{"token_file":"` + filepath.ToSlash(tokenFile) + `","token_command":"echo from-command"}`
 
-	if got, _ := token(t, load(t, map[string]string{"SLACK_THREAD_TOKEN": "from-env"}, `{"token":"from-config"}`)); got != "from-env" {
+	if got, _ := token(t, load(t, map[string]string{"PERRITITE_TOKEN": "from-env"}, `{"token":"from-config"}`)); got != "from-env" {
 		t.Errorf("env should win, got %q", got)
 	}
 	if got, _ := token(t, load(t, nil, `{"token":"from-config","token_command":"echo x"}`)); got != "from-config" {
@@ -71,13 +71,13 @@ func TestTokenCommandFailuresAreReported(t *testing.T) {
 
 func TestNoTokenExplainsTheOptions(t *testing.T) {
 	_, err := token(t, load(t, nil, ""))
-	if err == nil || !strings.Contains(err.Error(), "SLACK_THREAD_TOKEN") {
+	if err == nil || !strings.Contains(err.Error(), "PERRITITE_TOKEN") {
 		t.Fatalf("err = %v", err)
 	}
 }
 
 func TestEnvOverridesOwnersAndDirectories(t *testing.T) {
-	cfg := load(t, map[string]string{"SLACK_THREAD_OWNER_IDS": "U1, U2", "SLACK_THREAD_STATE_DIR": "/s", "SLACK_THREAD_DOWNLOAD_DIR": "/d"},
+	cfg := load(t, map[string]string{"PERRITITE_OWNER_IDS": "U1, U2", "PERRITITE_STATE_DIR": "/s", "PERRITITE_DOWNLOAD_DIR": "/d"},
 		`{"owner_user_ids":["U9"],"state_dir":"/x","as_user":false}`)
 	if strings.Join(cfg.Owners, ",") != "U1,U2" || cfg.StateDir != "/s" || cfg.DownloadDir != "/d" || cfg.AsUser {
 		t.Fatalf("cfg = %+v", cfg)
@@ -89,7 +89,7 @@ func TestDefaultsWhenThereIsNoFile(t *testing.T) {
 	if cfg.FileExists || !cfg.AsUser || cfg.TokenSource() != "none" {
 		t.Fatalf("cfg = %+v", cfg)
 	}
-	if !strings.HasSuffix(cfg.StateDir, "slack-thread") || !strings.Contains(cfg.DownloadDir, "slack-thread") {
+	if !strings.HasSuffix(cfg.StateDir, "perritite") || !strings.Contains(cfg.DownloadDir, "perritite") {
 		t.Fatalf("dirs = %s / %s", cfg.StateDir, cfg.DownloadDir)
 	}
 }
@@ -99,7 +99,7 @@ func TestBadJSONIsAnError(t *testing.T) {
 	path := filepath.Join(dir, "config.json")
 	_ = os.WriteFile(path, []byte("{nope"), 0o600)
 	if _, err := config.Load(func(k string) string {
-		if k == "SLACK_THREAD_CONFIG" {
+		if k == "PERRITITE_CONFIG" {
 			return path
 		}
 		return ""
@@ -116,9 +116,9 @@ func TestTheAPIURLHookIsLoopbackOnly(t *testing.T) {
 		dir := t.TempDir()
 		_, err := config.Load(func(k string) string {
 			switch k {
-			case "SLACK_THREAD_API_URL":
+			case "PERRITITE_API_URL":
 				return url
-			case "SLACK_THREAD_CONFIG":
+			case "PERRITITE_CONFIG":
 				return filepath.Join(dir, "none.json")
 			}
 			return ""

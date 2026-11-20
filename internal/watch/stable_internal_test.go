@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chadrem/slack-thread/internal/thread"
+	"github.com/chadrem/perritite/internal/thread"
 )
 
 type stepClock struct {

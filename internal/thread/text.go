@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/chadrem/slack-thread/internal/slack"
+	"github.com/chadrem/perritite/internal/slack"
 )
 
 // Escape makes text safe for Slack: &, <, > become entities. It runs BEFORE
@@ -113,7 +113,7 @@ func (s *Service) resolveProse(ctx context.Context, text string) (string, []stri
 			if len(first) > 0 {
 				hint = first[0]
 			}
-			resolveErr = fmt.Errorf("no Slack user matches @{%s}; try `slack-thread users %s` (or --raw if this is literal @{...} syntax)", name, hint)
+			resolveErr = fmt.Errorf("no Slack user matches @{%s}; try `perritite users %s` (or --raw if this is literal @{...} syntax)", name, hint)
 		default:
 			names := make([]string, len(matches))
 			for i, m := range matches {
