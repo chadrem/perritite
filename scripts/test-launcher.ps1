@@ -40,3 +40,7 @@ try {
   Stop-Process -Id $server.Id -Force -ErrorAction SilentlyContinue
   Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 }
+
+# The last native command above fails on purpose (the tamper check); the
+# runner would report its exit code as this script's.
+exit 0
