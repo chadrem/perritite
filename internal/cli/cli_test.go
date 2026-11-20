@@ -222,14 +222,14 @@ func TestWaitPrintsTheEventAndResumesWithNoArguments(t *testing.T) {
 	e.fake.On("conversations.replies", func(url.Values) slacktest.Response {
 		return slacktest.Body(map[string]any{"messages": msgs})
 	})
-	r := e.run("", "wait", threadURL, "--after", "1752241234.567890", "--debounce", "0")
+	r := e.run("", "wait", threadURL, "--after", "1752241234.567890", "--debounce", "0", "--interval", "1s")
 	if r.code != 0 || !strings.HasPrefix(r.stdout, "NEW ts=1752241300.000000 user=U2 role=owner | Abby Holtz — ") {
 		t.Fatalf("%+v", r)
 	}
 	mustContain(t, r.stdout, "  | proceed")
 
 	msgs = append(msgs, slacktest.Msg("1752241400.000000", "U3", "next"))
-	r = e.run("", "wait", threadURL, "--debounce", "0")
+	r = e.run("", "wait", threadURL, "--debounce", "0", "--interval", "1s")
 	if strings.Contains(r.stdout, "proceed") || !strings.Contains(r.stdout, "user=U3 role=member") {
 		t.Fatalf("resume must deliver only the unseen message: %+v", r)
 	}

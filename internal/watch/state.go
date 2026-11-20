@@ -22,6 +22,9 @@ type State struct {
 	// LastActivity is the last time anyone (including us) posted; the idle
 	// clock and keep-warm window measure from it, across runs.
 	LastActivity int64 `json:"last_activity"`
+	// LastPoll paces the next run's first poll, so re-arming never polls
+	// sooner than --interval after the previous run's last poll.
+	LastPoll int64 `json:"last_poll,omitempty"`
 }
 
 // Store keeps state files and lock files in Dir.
@@ -118,9 +121,12 @@ func (e *ErrHeld) Error() string {
 // Lock is a held thread lock.
 type Lock struct{ f *os.File }
 
-// Release drops the lock (closing the file releases the OS lock).
+// Release clears the recorded pid, then drops the lock (closing the file
+// releases the OS lock). A waiter killed outright skips this, which is why
+// readers never trust a pid without stableHolder's double check.
 func (l *Lock) Release() {
 	if l != nil && l.f != nil {
+		_ = l.f.Truncate(0)
 		l.f.Close()
 		l.f = nil
 	}

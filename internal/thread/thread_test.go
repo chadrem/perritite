@@ -619,3 +619,22 @@ func TestDownloadsArePrivate(t *testing.T) {
 		t.Fatalf("dir mode = %v", dirInfo.Mode().Perm())
 	}
 }
+
+func TestMentionsInsideOrRightAfterCodeAreLeftAlone(t *testing.T) {
+	out, _, err := resolve(t, "run `cc @abby here` then `x`@dave and @abby")
+	if err != nil || out != "run `cc @abby here` then `x`@dave and <@U2>" {
+		t.Fatalf("out=%q err=%v", out, err)
+	}
+}
+
+func TestAuthorsMissingFromALoadedMemberListFallBackToUsersInfo(t *testing.T) {
+	fake := slacktest.New(t)
+	s := newService(t, fake)
+	channelInfo(fake, "c")
+	s.SetMembers(nil) // a list that lacks the author (e.g. Slack Connect)
+	fake.On("conversations.replies", slacktest.Pages("messages", []map[string]any{slacktest.Msg("1.0", "U2", "hi")}))
+	res, _ := s.Read(context.Background(), threadURL, thread.ReadOptions{})
+	if res.Messages[0].Author != "Abby Holtz" {
+		t.Fatalf("author = %q", res.Messages[0].Author)
+	}
+}

@@ -1,6 +1,7 @@
 package watch
 
 import (
+	"errors"
 	"os"
 	"runtime"
 	"syscall"
@@ -16,7 +17,12 @@ func Terminate(pid int) error {
 		return err
 	}
 	if runtime.GOOS == "windows" {
-		return p.Kill()
+		err = p.Kill()
+	} else {
+		err = p.Signal(syscall.SIGTERM)
 	}
-	return p.Signal(syscall.SIGTERM)
+	if errors.Is(err, os.ErrProcessDone) {
+		return nil // it exited on its own in the meantime
+	}
+	return err
 }

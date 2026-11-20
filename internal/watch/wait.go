@@ -53,7 +53,8 @@ type Options struct {
 	// Idle ends the watch after this long with no posts from anyone
 	// (measured across runs). 0 waits forever.
 	Idle time.Duration
-	// Interval is the poll cadence; no poll is ever closer to the last.
+	// Interval is the poll cadence. No poll is ever closer than this to the
+	// previous one, across runs too.
 	Interval time.Duration
 	// Debounce holds a delivery until the thread has been quiet this long,
 	// so a burst of messages is one wakeup. 0 delivers on first sight.
@@ -65,8 +66,8 @@ type Options struct {
 	// keeps the model's prompt cache warm. 0 disables it.
 	KeepWarm    time.Duration
 	KeepWarmFor time.Duration
-	// MaxRun exits with RESTART after this long, for hosts that cap
-	// background commands (claude -p, the Agent SDK). 0 = no cap.
+	// MaxRun ends the run by this deadline (RESTART, or NEW if messages are
+	// in hand), for hosts that cap background commands. 0 = no cap.
 	MaxRun time.Duration
 	// ErrorWindow is how long transient Slack/network errors are ridden out
 	// before giving up.
@@ -119,7 +120,8 @@ type Waiter struct {
 	Terminate func(int) error
 }
 
-// maxBackoff caps the delay between polls while errors persist.
+// maxBackoff caps the delay between polls while errors persist (but never
+// below --interval).
 const maxBackoff = 2 * time.Minute
 
 var errMaxRun = errors.New("max run reached")
@@ -135,6 +137,25 @@ func (w *Waiter) Run(ctx context.Context, opts Options) (Outcome, error) {
 	return outcome, nil
 }
 
+// session is one run's mutable state.
+type session struct {
+	w     *Waiter
+	ctx   context.Context
+	opts  Options
+	ref   thread.Ref
+	st    State
+	start time.Time
+	// deadline is --max-run (zero if none).
+	deadline time.Time
+	// seen is how far this run has read; st.Cursor (committed) only moves
+	// past messages that have been printed, or own posts with nothing
+	// pending before them. So st is always safe to save, and a stop or
+	// crash mid-debounce re-delivers pending messages instead of losing them.
+	seen                      string
+	pending                   []slack.Message
+	firstPending, lastPending time.Time
+}
+
 func (w *Waiter) run(ctx context.Context, opts Options) (Outcome, error) {
 	ref, err := thread.ParseURL(opts.URL)
 	if err != nil {
@@ -147,9 +168,12 @@ func (w *Waiter) run(ctx context.Context, opts Options) (Outcome, error) {
 		return Failed, fmt.Errorf("--after must be a dotted Slack ts like 1752241234.567890 (the ts= that post prints), not %q", opts.After)
 	}
 	clock := w.clock()
-	start := clock.Now()
+	s := &session{w: w, ctx: ctx, opts: opts, ref: ref, start: clock.Now()}
+	if opts.MaxRun > 0 {
+		s.deadline = s.start.Add(opts.MaxRun)
+	}
 
-	lock, err := w.acquire(ctx, ref, LockInfo{PID: w.PID, Started: start.Unix()}, opts.Replace)
+	lock, err := w.acquire(ctx, ref, LockInfo{PID: w.PID, Started: s.start.Unix()}, opts.Replace)
 	if err != nil {
 		var held *ErrHeld
 		if errors.As(err, &held) {
@@ -168,10 +192,7 @@ func (w *Waiter) run(ctx context.Context, opts Options) (Outcome, error) {
 	}
 	defer lock.Release()
 
-	budget := &errorBudget{window: opts.ErrorWindow, interval: opts.Interval}
-	if opts.MaxRun > 0 {
-		budget.deadline = start.Add(opts.MaxRun)
-	}
+	budget := &errorBudget{window: opts.ErrorWindow, interval: opts.Interval, deadline: s.deadline}
 	var me slack.AuthInfo
 	if err := w.retry(ctx, budget, func() (err error) { me, err = w.Svc.Whoami(ctx); return }); err != nil {
 		return w.ended(ctx, err)
@@ -180,15 +201,14 @@ func (w *Waiter) run(ctx context.Context, opts Options) (Outcome, error) {
 		return Failed, fmt.Errorf("the token posts as %s, which is also in owner_user_ids, so that user's messages look like Claude's own and would never be delivered; give Claude its own Slack identity (a bot token, or a separate user)", me.UserID)
 	}
 
-	st, err := w.Store.Load(ref.Channel, ref.ThreadTS)
-	if err != nil {
+	if s.st, err = w.Store.Load(ref.Channel, ref.ThreadTS); err != nil {
 		return Failed, err
 	}
-	st.URL, st.Channel, st.ThreadTS = opts.URL, ref.Channel, ref.ThreadTS
+	s.st.URL, s.st.Channel, s.st.ThreadTS = opts.URL, ref.Channel, ref.ThreadTS
 	switch {
 	case opts.After != "":
-		st.Cursor, st.LastActivity = opts.After, start.Unix()
-	case st.Cursor == "":
+		s.st.Cursor, s.st.LastActivity = opts.After, s.start.Unix()
+	case s.st.Cursor == "":
 		var msgs []slack.Message
 		if err := w.retry(ctx, budget, func() (err error) {
 			msgs, err = w.Svc.API.Replies(ctx, ref.Channel, ref.ThreadTS, "")
@@ -196,101 +216,185 @@ func (w *Waiter) run(ctx context.Context, opts Options) (Outcome, error) {
 		}); err != nil {
 			return w.ended(ctx, err)
 		}
-		st.Cursor = ref.ThreadTS
+		s.st.Cursor = ref.ThreadTS
 		if sorted := thread.SortUnique(msgs); len(sorted) > 0 {
-			st.Cursor = sorted[len(sorted)-1].TS
+			s.st.Cursor = sorted[len(sorted)-1].TS
 		}
-		st.LastActivity = start.Unix()
+		s.st.LastActivity, s.st.LastPoll = s.start.Unix(), clock.Now().Unix()
 	}
-	if st.LastActivity == 0 {
-		st.LastActivity = start.Unix()
+	if s.st.LastActivity == 0 {
+		s.st.LastActivity = s.start.Unix()
 	}
-	if err := w.Store.Save(st); err != nil {
+	if err := w.Store.Save(s.st); err != nil {
 		return Failed, err
 	}
+	s.seen = s.st.Cursor
 
-	// seen is how far this run has read; st.Cursor (committed) only moves
-	// past messages that have been printed, or own posts with nothing
-	// pending before them. A stop or crash mid-debounce therefore
-	// re-delivers pending messages next run instead of losing them.
-	seen := st.Cursor
-	var pending []slack.Message
-	var firstPending, lastPending time.Time
+	// Pace the first poll: never closer than --interval to the last one,
+	// even if that was the previous run's.
+	if s.st.LastPoll > 0 {
+		if wait := opts.Interval - clock.Now().Sub(time.Unix(s.st.LastPoll, 0)); wait > 0 {
+			if out, done, err := s.sleep(wait); done {
+				return out, err
+			}
+		}
+	}
+	return s.loop(budget, me.UserID)
+}
+
+func (s *session) loop(budget *errorBudget, self string) (Outcome, error) {
+	w, opts, clock := s.w, s.opts, s.w.clock()
 	for {
-		msgs, err := w.Svc.API.Replies(ctx, ref.Channel, ref.ThreadTS, seen)
+		msgs, err := s.poll()
 		now := clock.Now()
+		s.st.LastPoll = now.Unix()
 		if err != nil {
-			if ctx.Err() != nil {
-				return w.stopped()
+			if s.ctx.Err() != nil {
+				return s.stop()
+			}
+			if s.pastDeadline(now) || errors.Is(err, context.DeadlineExceeded) {
+				return s.maxRun()
 			}
 			delay, giveUp := budget.fail(err, now)
-			if giveUp != nil {
-				return w.ended(ctx, giveUp)
+			switch {
+			case errors.Is(giveUp, errMaxRun):
+				return s.maxRun()
+			case giveUp != nil && len(s.pending) > 0:
+				// Defensive: a settling burst's next poll is scheduled for
+				// when it has settled, so the case below normally fires
+				// first. Either way, what we hold is real; deliver it and
+				// let the next run report the error.
+				return s.deliver()
+			case giveUp != nil:
+				return Failed, giveUp
+			case len(s.pending) > 0 && s.settled(now):
+				return s.deliver()
 			}
-			if err := clock.Sleep(ctx, delay); err != nil {
-				return w.stopped()
+			if out, done, err := s.sleep(delay); done {
+				return out, err
 			}
 			continue
 		}
 		budget.ok()
 
 		committed := false
-		for _, m := range thread.Newer(thread.SortUnique(msgs), seen) {
-			seen, st.LastActivity = m.TS, now.Unix()
-			if m.User != "" && m.User == me.UserID {
+		for _, m := range thread.Newer(thread.SortUnique(msgs), s.seen) {
+			s.seen, s.st.LastActivity = m.TS, now.Unix()
+			if m.User != "" && m.User == self {
 				// Our own post: never wakes anyone.
-				if len(pending) == 0 {
-					st.Cursor, committed = m.TS, true
+				if len(s.pending) == 0 {
+					s.st.Cursor, committed = m.TS, true
 				}
 				continue
 			}
-			if len(pending) == 0 {
-				firstPending = now
+			if len(s.pending) == 0 {
+				s.firstPending = now
 			}
-			pending = append(pending, m)
-			lastPending = now
+			s.pending = append(s.pending, m)
+			s.lastPending = now
 		}
 
-		if len(pending) > 0 && (now.Sub(lastPending) >= opts.Debounce || now.Sub(firstPending) >= opts.MaxBatch) {
-			w.printBatch(ctx, ref, pending)
-			// Print first, then save: a crash between them re-delivers
-			// rather than loses.
-			st.Cursor = seen
-			return New, w.Store.Save(st)
+		if len(s.pending) > 0 && s.settled(now) {
+			return s.deliver()
 		}
 		if committed {
-			if err := w.Store.Save(st); err != nil {
+			if err := w.Store.Save(s.st); err != nil {
 				return Failed, err
 			}
 		}
-
-		if len(pending) == 0 {
-			quiet := now.Sub(time.Unix(st.LastActivity, 0))
+		if s.pastDeadline(now) {
+			return s.maxRun()
+		}
+		if len(s.pending) == 0 {
+			quiet := now.Sub(time.Unix(s.st.LastActivity, 0))
 			switch {
 			case opts.Idle > 0 && quiet >= opts.Idle:
+				s.save()
 				fmt.Fprintf(w.Out, "IDLE: no posts in this thread for %s; the watch has ended.\n", formatDuration(opts.Idle))
 				return Idle, nil
-			case opts.KeepWarm > 0 && now.Sub(start) >= opts.KeepWarm && quiet <= opts.KeepWarmFor:
+			case opts.KeepWarm > 0 && now.Sub(s.start) >= opts.KeepWarm && quiet <= opts.KeepWarmFor:
+				s.save()
 				fmt.Fprintln(w.Out, "KEEPWARM: no new messages; re-arm to keep watching.")
 				return KeepWarm, nil
-			case opts.MaxRun > 0 && now.Sub(start) >= opts.MaxRun:
-				return w.restart()
 			}
 		}
 
 		delay := opts.Interval
-		if len(pending) > 0 {
-			// Settling a burst: poll again once --debounce has passed, but
-			// never sooner than --interval (rate-limited apps rely on it).
-			if remaining := opts.Debounce - now.Sub(lastPending); remaining > delay {
+		if len(s.pending) > 0 {
+			// Settling a burst: poll again once --debounce (or --max-batch)
+			// is up, but never sooner than --interval.
+			remaining := opts.Debounce - now.Sub(s.lastPending)
+			if batch := opts.MaxBatch - now.Sub(s.firstPending); batch < remaining {
+				remaining = batch
+			}
+			if remaining > delay {
 				delay = remaining
 			}
 		}
-		if err := clock.Sleep(ctx, delay); err != nil {
-			return w.stopped()
+		if out, done, err := s.sleep(delay); done {
+			return out, err
 		}
 	}
 }
+
+// poll fetches replies newer than seen, bounded by the --max-run deadline.
+func (s *session) poll() ([]slack.Message, error) {
+	ctx := s.ctx
+	if !s.deadline.IsZero() {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithDeadline(ctx, s.deadline)
+		defer cancel()
+	}
+	return s.w.Svc.API.Replies(ctx, s.ref.Channel, s.ref.ThreadTS, s.seen)
+}
+
+// sleep waits d, unless that would carry the run past --max-run, in which
+// case it ends the run now rather than overshoot or poll early. done
+// reports that the run is over (outcome and error are then final).
+func (s *session) sleep(d time.Duration) (Outcome, bool, error) {
+	clock := s.w.clock()
+	if !s.deadline.IsZero() && clock.Now().Add(d).After(s.deadline) {
+		out, err := s.maxRun()
+		return out, true, err
+	}
+	if err := clock.Sleep(s.ctx, d); err != nil {
+		out, err := s.stop()
+		return out, true, err
+	}
+	return "", false, nil
+}
+
+func (s *session) settled(now time.Time) bool {
+	return now.Sub(s.lastPending) >= s.opts.Debounce || now.Sub(s.firstPending) >= s.opts.MaxBatch
+}
+
+func (s *session) pastDeadline(now time.Time) bool {
+	return !s.deadline.IsZero() && !now.Before(s.deadline)
+}
+
+// deliver prints the pending messages, then commits the cursor past them:
+// a crash between the two re-delivers rather than loses.
+func (s *session) deliver() (Outcome, error) {
+	s.w.printBatch(s.ctx, s.ref, s.pending)
+	s.st.Cursor = s.seen
+	return New, s.w.Store.Save(s.st)
+}
+
+// maxRun ends a run at its --max-run deadline, delivering anything in hand.
+func (s *session) maxRun() (Outcome, error) {
+	if len(s.pending) > 0 {
+		return s.deliver()
+	}
+	s.save()
+	return s.w.restart()
+}
+
+func (s *session) stop() (Outcome, error) {
+	s.save() // safe: st.Cursor never passes an undelivered message
+	return s.w.stopped()
+}
+
+func (s *session) save() { _ = s.w.Store.Save(s.st) }
 
 func (w *Waiter) restart() (Outcome, error) {
 	fmt.Fprintln(w.Out, "RESTART: no new messages before --max-run; re-arm to keep watching.")
@@ -302,7 +406,7 @@ func (w *Waiter) stopped() (Outcome, error) {
 	return Stopped, nil
 }
 
-// ended maps how a retry loop ended: cancelled, max-run, or a real failure.
+// ended maps how a setup retry ended: cancelled, max-run, or a real failure.
 func (w *Waiter) ended(ctx context.Context, err error) (Outcome, error) {
 	switch {
 	case ctx.Err() != nil:
@@ -314,25 +418,38 @@ func (w *Waiter) ended(ctx context.Context, err error) (Outcome, error) {
 	}
 }
 
-// acquire takes the lock; with replace it first stops a live holder and
-// waits (up to 10s) for the OS to release its lock.
+// acquire takes the lock. A collision is retried briefly first (a `stop`
+// probing the lock holds it for an instant). With replace, a live holder
+// is stopped and the lock taken once the OS releases it.
 func (w *Waiter) acquire(ctx context.Context, ref thread.Ref, info LockInfo, replace bool) (*Lock, error) {
-	lock, err := w.Store.Acquire(ref.Channel, ref.ThreadTS, info)
-	var held *ErrHeld
-	if !replace || !errors.As(err, &held) {
-		return lock, err
-	}
-	if held.Holder.PID <= 0 {
-		return nil, errors.New("--replace: the current waiter has not recorded its pid yet; retry in a moment")
-	}
-	terminate := w.Terminate
-	if terminate == nil {
-		terminate = Terminate
-	}
-	if err := terminate(held.Holder.PID); err != nil {
-		return nil, fmt.Errorf("could not stop waiter pid %d: %w", held.Holder.PID, err)
-	}
 	clock := w.clock()
+	var lock *Lock
+	var err error
+	var held *ErrHeld
+	for i := 0; i < 3; i++ {
+		if lock, err = w.Store.Acquire(ref.Channel, ref.ThreadTS, info); !errors.As(err, &held) {
+			return lock, err
+		}
+		if err := clock.Sleep(ctx, 50*time.Millisecond); err != nil {
+			return nil, err
+		}
+	}
+	if !replace {
+		return nil, err
+	}
+	holder, err := stableHolder(ctx, w.Store, ref, clock)
+	if err != nil {
+		return nil, err
+	}
+	if holder != nil {
+		terminate := w.Terminate
+		if terminate == nil {
+			terminate = Terminate
+		}
+		if err := terminate(holder.PID); err != nil {
+			return nil, fmt.Errorf("could not stop waiter pid %d: %w", holder.PID, err)
+		}
+	}
 	for i := 0; i < 100; i++ {
 		if lock, err = w.Store.Acquire(ref.Channel, ref.ThreadTS, info); !errors.As(err, &held) {
 			return lock, err
@@ -341,7 +458,29 @@ func (w *Waiter) acquire(ctx context.Context, ref thread.Ref, info LockInfo, rep
 			return nil, err
 		}
 	}
-	return nil, fmt.Errorf("waiter pid %d did not exit after being stopped", held.Holder.PID)
+	return nil, fmt.Errorf("the waiter on this thread did not exit after being stopped")
+}
+
+// stableHolder returns the lock's live holder, or nil if nobody holds it.
+// A holder writes its pid just after taking the lock, so a pid is trusted
+// only when the lock is held and reads the same, non-zero, 100ms apart:
+// never a previous holder's leftover.
+func stableHolder(ctx context.Context, store *Store, ref thread.Ref, clock Clock) (*LockInfo, error) {
+	var prev *LockInfo
+	for i := 0; i < 20; i++ {
+		cur, err := store.Holder(ref.Channel, ref.ThreadTS)
+		if err != nil || cur == nil {
+			return nil, err
+		}
+		if prev != nil && cur.PID > 0 && cur.PID == prev.PID {
+			return cur, nil
+		}
+		prev = cur
+		if err := clock.Sleep(ctx, 100*time.Millisecond); err != nil {
+			return nil, err
+		}
+	}
+	return nil, errors.New("a waiter holds this thread but its pid is unreadable; retry in a moment")
 }
 
 func (w *Waiter) clock() Clock {
@@ -387,15 +526,20 @@ type errorBudget struct {
 
 func (e *errorBudget) ok() { e.since, e.last, e.failures = time.Time{}, time.Time{}, 0 }
 
-// fail records err and returns how long to wait, or the error to give up with.
+func (e *errorBudget) maxDelay() time.Duration {
+	if e.interval > maxBackoff {
+		return e.interval
+	}
+	return maxBackoff
+}
+
+// fail records err and returns how long to wait, or the error to give up
+// with (errMaxRun when the next attempt would land past --max-run).
 func (e *errorBudget) fail(err error, now time.Time) (time.Duration, error) {
 	if !slack.IsTransient(err) {
 		return 0, err
 	}
-	if !e.deadline.IsZero() && !now.Before(e.deadline) {
-		return 0, errMaxRun
-	}
-	if !e.last.IsZero() && now.Sub(e.last) > 2*maxBackoff+e.interval {
+	if !e.last.IsZero() && now.Sub(e.last) > 2*e.maxDelay()+e.interval {
 		e.since, e.failures = time.Time{}, 0
 	}
 	if e.since.IsZero() {
@@ -407,14 +551,14 @@ func (e *errorBudget) fail(err error, now time.Time) (time.Duration, error) {
 		return 0, fmt.Errorf("giving up after %s of errors: %w", formatDuration(now.Sub(e.since)), err)
 	}
 	delay := e.interval
-	for i := 1; i < e.failures && delay < maxBackoff; i++ {
+	for i := 1; i < e.failures && delay < e.maxDelay(); i++ {
 		delay *= 2
 	}
-	if delay > maxBackoff {
-		delay = maxBackoff
+	if delay > e.maxDelay() {
+		delay = e.maxDelay()
 	}
 	if !e.deadline.IsZero() && now.Add(delay).After(e.deadline) {
-		delay = e.deadline.Sub(now)
+		return 0, errMaxRun
 	}
 	return delay, nil
 }
@@ -466,8 +610,8 @@ func formatDuration(d time.Duration) string {
 }
 
 // Stop ends the live waiter on a thread, if any, and waits briefly for it
-// to exit. The pid comes from a lock that is currently held, so it is the
-// waiter's own, never a recycled one.
+// to exit. It signals only a pid that a currently-held lock reports
+// consistently (see stableHolder), never a previous holder's leftover.
 func Stop(ctx context.Context, store *Store, rawURL string, terminate func(int) error, clock Clock) (string, error) {
 	ref, err := thread.ParseURL(rawURL)
 	if err != nil {
@@ -476,21 +620,12 @@ func Stop(ctx context.Context, store *Store, rawURL string, terminate func(int) 
 	if ref.ThreadTS == "" {
 		return "", errors.New("stop needs a thread URL")
 	}
-	holder, err := store.Holder(ref.Channel, ref.ThreadTS)
+	holder, err := stableHolder(ctx, store, ref, clock)
 	if err != nil {
 		return "", err
 	}
-	for i := 0; holder != nil && holder.PID <= 0 && i < 20; i++ { // just started: pid not written yet
-		if err := clock.Sleep(ctx, 50*time.Millisecond); err != nil {
-			return "", err
-		}
-		holder, _ = store.Holder(ref.Channel, ref.ThreadTS)
-	}
 	if holder == nil {
 		return "no waiter is watching this thread", nil
-	}
-	if holder.PID <= 0 {
-		return "", errors.New("a waiter holds this thread but has not recorded its pid; retry in a moment")
 	}
 	if err := terminate(holder.PID); err != nil {
 		return "", fmt.Errorf("could not stop waiter pid %d: %w", holder.PID, err)

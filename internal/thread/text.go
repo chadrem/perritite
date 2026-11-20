@@ -42,17 +42,26 @@ var (
 func (s *Service) ResolveMentions(ctx context.Context, text string) (string, []string, error) {
 	var warnings []string
 	var b strings.Builder
+	afterCode := false
 	for _, seg := range splitCode(text) {
 		if seg.code {
 			b.WriteString(seg.text)
+			afterCode = true
 			continue
 		}
-		out, w, err := s.resolveProse(ctx, seg.text)
+		prose := seg.text
+		if afterCode {
+			// A mention must follow start, whitespace or "(": a segment
+			// that begins right after a code span is not at the start.
+			prose = "\x01" + prose
+		}
+		out, w, err := s.resolveProse(ctx, prose)
 		if err != nil {
 			return "", nil, err
 		}
-		b.WriteString(out)
+		b.WriteString(strings.TrimPrefix(out, "\x01"))
 		warnings = append(warnings, w...)
+		afterCode = false
 	}
 	return b.String(), warnings, nil
 }

@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -146,15 +147,23 @@ func (c *Config) Token(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("no Slack token: set SLACK_THREAD_TOKEN, or token / token_file / token_command in %s (see `slack-thread help`)", c.Path)
 }
 
+// tokenWaitDelay bounds how long a token_command's leftover children may
+// hold its output pipes open after it exits (a variable for tests).
+var tokenWaitDelay = 5 * time.Second
+
 func runTokenCommand(ctx context.Context, command string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
 	cmd := shellCommand(ctx, command)
 	// A grandchild that inherits the pipes must not hold us past the timeout.
-	cmd.WaitDelay = 5 * time.Second
+	cmd.WaitDelay = tokenWaitDelay
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
+	err := cmd.Run()
+	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success() {
+		err = nil // it printed the token and exited; a leftover child kept the pipe open
+	}
+	if err != nil {
 		// Keep the echo short: wait prints errors where the model reads them.
 		detail := strings.TrimSpace(stderr.String())
 		if i := strings.IndexAny(detail, "\r\n"); i >= 0 {
@@ -214,6 +223,15 @@ func expandHome(path string, getenv func(string) string) string {
 		}
 	}
 	return path
+}
+
+// IsLoopbackHost reports whether a host[:port] is localhost or a loopback IP.
+func IsLoopbackHost(hostport string) bool {
+	host := hostport
+	if h, _, err := net.SplitHostPort(hostport); err == nil {
+		host = h
+	}
+	return loopback(host)
 }
 
 func loopback(host string) bool {

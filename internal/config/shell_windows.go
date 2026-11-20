@@ -4,7 +4,9 @@ package config
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 )
 
@@ -13,7 +15,11 @@ import (
 // cmd.exe does not understand, and would mangle quoted paths such as
 // "C:\Program Files\...".
 func shellCommand(ctx context.Context, command string) *exec.Cmd {
-	cmd := exec.CommandContext(ctx, "cmd.exe")
+	shell := "cmd.exe"
+	if root := os.Getenv("SystemRoot"); root != "" {
+		shell = filepath.Join(root, "System32", "cmd.exe") // never a cmd.exe found on PATH
+	}
+	cmd := exec.CommandContext(ctx, shell)
 	cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: `cmd.exe /d /s /c "` + command + `"`}
 	return cmd
 }

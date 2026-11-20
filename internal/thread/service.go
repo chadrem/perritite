@@ -355,7 +355,7 @@ func (s *Service) memberName(ctx context.Context, id string) string {
 			}
 		}
 	}
-	if !found && !s.loaded {
+	if !found { // e.g. a Slack Connect user missing from the member list
 		if m, err := s.API.UserInfo(ctx, id); err == nil && m.ID != "" {
 			name = fullName(m)
 		}

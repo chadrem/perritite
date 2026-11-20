@@ -235,3 +235,59 @@ func TestSlackHost(t *testing.T) {
 		}
 	}
 }
+
+func TestARateLimitWaitEndsWhenTheContextIsCancelled(t *testing.T) {
+	fake := slacktest.New(t)
+	fake.On("auth.test", func(url.Values) slacktest.Response {
+		return slacktest.Response{Status: 429, Headers: map[string]string{"Retry-After": "60"}}
+	})
+	c := slack.New("xoxb-test") // real, context-aware sleep
+	c.BaseURL = fake.APIURL()
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if _, err := c.AuthTest(ctx); err == nil {
+		t.Fatal("want an error")
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatalf("stop took %s: the 429 wait ignored cancellation", time.Since(start))
+	}
+}
+
+type recordingTransport struct {
+	auth map[string]string
+	fail error
+}
+
+func (r *recordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if r.fail != nil {
+		return nil, r.fail
+	}
+	r.auth[req.URL.String()] = req.Header.Get("Authorization")
+	return &http.Response{StatusCode: 200, Body: http.NoBody, Header: http.Header{}, Request: req}, nil
+}
+
+func TestByDefaultTheTokenGoesOnlyToSlackOverHTTPS(t *testing.T) {
+	rt := &recordingTransport{auth: map[string]string{}}
+	c := slack.New("xoxb-test")
+	c.HTTP = &http.Client{Transport: rt}
+	ctx := context.Background()
+	for _, u := range []string{"https://files.slack.com/a", "http://files.slack.com/b", "https://cdn.example.com/c"} {
+		_, _ = c.Download(ctx, u, 10)
+	}
+	if rt.auth["https://files.slack.com/a"] != "Bearer xoxb-test" {
+		t.Errorf("https Slack host must be authorized")
+	}
+	if rt.auth["http://files.slack.com/b"] != "" || rt.auth["https://cdn.example.com/c"] != "" {
+		t.Errorf("token leaked: %v", rt.auth)
+	}
+}
+
+func TestDownloadErrorsNeverEchoTheURL(t *testing.T) {
+	c := slack.New("xoxb-test")
+	c.HTTP = &http.Client{Transport: &recordingTransport{fail: errors.New("connection reset")}}
+	_, err := c.Download(context.Background(), "https://files.slack.com/x?sig=SECRET", 10)
+	if err == nil || strings.Contains(err.Error(), "SECRET") {
+		t.Fatalf("err = %v", err)
+	}
+}

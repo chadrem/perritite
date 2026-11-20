@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chadrem/slack-thread/internal/config"
 )
@@ -136,5 +137,28 @@ func TestTokenCommandErrorsEchoOnlyAShortFirstLine(t *testing.T) {
 	_, err := token(t, cfg)
 	if err == nil || !strings.Contains(err.Error(), "first-line") || strings.Contains(err.Error(), "second-line") {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestTokenCommandStderrIsCappedAt200Bytes(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sh syntax")
+	}
+	cfg := load(t, nil, `{"token_command":"printf '%0300d' 0 >&2; exit 1"}`)
+	_, err := token(t, cfg)
+	if err == nil || strings.Count(err.Error(), "0") > 210 {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestATokenCommandWhoseChildKeepsThePipeStillYieldsItsToken(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sh syntax")
+	}
+	defer config.SetTokenWaitDelay(300 * time.Millisecond)()
+	cfg := load(t, nil, `{"token_command":"echo xoxb-good; sleep 5 &"}`)
+	got, err := token(t, cfg)
+	if err != nil || got != "xoxb-good" {
+		t.Fatalf("got %q err %v", got, err)
 	}
 }

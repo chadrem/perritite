@@ -255,8 +255,9 @@ func (c *cmd) service(ctx context.Context) (*thread.Service, error) {
 	api := slack.New(token)
 	if cfg.APIURL != "" {
 		api.BaseURL = cfg.APIURL
-		// Test servers are plain localhost; let them see the token.
-		api.TrustedHost = func(string) bool { return true }
+		// Test servers are plain-http localhost: trust loopback and Slack
+		// hosts, never anything else a redirect points at.
+		api.TrustedHost = func(host string) bool { return config.IsLoopbackHost(host) || slack.SlackHost(host) }
 	}
 	return &thread.Service{API: api, DownloadRoot: cfg.DownloadDir, AsUser: cfg.AsUser}, nil
 }

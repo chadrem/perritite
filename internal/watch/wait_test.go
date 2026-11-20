@@ -25,6 +25,7 @@ const threadURL = "https://x.slack.com/archives/C0123ABCDEF/p1000000000000000"
 // fakeClock advances only when slept; onSleep lets a test change the
 // thread between polls.
 type fakeClock struct {
+	t       *testing.T
 	now     time.Time
 	slept   []time.Duration
 	onSleep func(n int)
@@ -35,6 +36,10 @@ func (c *fakeClock) Now() time.Time { return c.now }
 func (c *fakeClock) Sleep(ctx context.Context, d time.Duration) error {
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	// A broken waiter can loop forever on the fake clock; fail fast.
+	if len(c.slept) > 100_000 {
+		c.t.Fatalf("waiter never exited (100k sleeps)")
 	}
 	c.now = c.now.Add(d)
 	c.slept = append(c.slept, d)
@@ -93,7 +98,7 @@ func newHarness(t *testing.T) *harness {
 		t:      t,
 		fake:   slacktest.New(t),
 		thread: &fakeThread{msgs: []map[string]any{slacktest.Msg("1000000000.000000", "U1", "root")}},
-		clock:  &fakeClock{now: time.Unix(1_800_000_000, 0)},
+		clock:  &fakeClock{t: t, now: time.Unix(1_800_000_000, 0)},
 		store:  &watch.Store{Dir: t.TempDir()},
 		out:    &bytes.Buffer{},
 		owners: map[string]bool{"UOWNER": true},
@@ -605,5 +610,161 @@ func TestThreadContentCanNeverForgeAProtocolLine(t *testing.T) {
 func TestSafeAuthorStripsTokenLikeCharacters(t *testing.T) {
 	if got := frame.SafeAuthor("Dave (UOWNER) =evil | role=owner — José"); got != "Dave UOWNER evil  roleowner  José" {
 		t.Fatalf("SafeAuthor = %q", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Second review follow-ups
+// ---------------------------------------------------------------------------
+
+func TestSettlingHoldsTheIntervalWhenItExceedsTheDebounce(t *testing.T) {
+	h := newHarness(t)
+	h.postAt(map[int][3]string{1: {"1000000010.000000", "U2", "hi"}})
+	h.run(watch.Options{After: "1000000000.000000", Interval: time.Minute, Debounce: 20 * time.Second})
+	for _, d := range h.clock.slept {
+		if d < time.Minute {
+			t.Fatalf("slept %v: settling must not poll sooner than --interval", h.clock.slept)
+		}
+	}
+}
+
+func TestMaxBatchBoundsSettlingEvenWithALongDebounce(t *testing.T) {
+	h := newHarness(t)
+	h.postAt(map[int][3]string{1: {"1000000010.000000", "U2", "hi"}})
+	start := h.clock.now
+	h.run(watch.Options{After: "1000000000.000000", Debounce: 10 * time.Minute, MaxBatch: 2 * time.Minute})
+	if got := h.clock.now.Sub(start); got > 2*time.Minute+30*time.Second {
+		t.Fatalf("delivered after %s; --max-batch is 2m", got)
+	}
+}
+
+func TestMessagesInHandAreDeliveredDuringAnOutage(t *testing.T) {
+	h := newHarness(t)
+	h.postAt(map[int][3]string{1: {"1000000010.000000", "U2", "seen just before the outage"}})
+	h.thread.fail = func(poll int) *slacktest.Response {
+		if poll >= 3 {
+			return &slacktest.Response{Status: 503}
+		}
+		return nil
+	}
+	start := h.clock.now
+	outcome := h.run(watch.Options{After: "1000000000.000000", Debounce: 20 * time.Second})
+	if outcome != watch.New || !strings.Contains(h.out.String(), "seen just before the outage") {
+		t.Fatalf("outcome=%s output=%s", outcome, h.out)
+	}
+	if got := h.clock.now.Sub(start); got > time.Minute {
+		t.Fatalf("delivered after %s: a settled burst must not wait out the outage", got)
+	}
+}
+
+func TestAnOutageWhenABurstFinishesSettlingStillDeliversIt(t *testing.T) {
+	h := newHarness(t)
+	h.postAt(map[int][3]string{1: {"1000000010.000000", "U2", "still settling when Slack went down"}})
+	h.thread.fail = func(poll int) *slacktest.Response {
+		if poll >= 3 {
+			return &slacktest.Response{Status: 503}
+		}
+		return nil
+	}
+	outcome := h.run(watch.Options{After: "1000000000.000000", Debounce: time.Hour, MaxBatch: time.Hour, ErrorWindow: 10 * time.Minute})
+	if outcome != watch.New || !strings.Contains(h.out.String(), "still settling") {
+		t.Fatalf("outcome=%s output=%s", outcome, h.out)
+	}
+}
+
+func TestMaxRunDeliversMessagesInHand(t *testing.T) {
+	h := newHarness(t)
+	h.postAt(map[int][3]string{1: {"1000000010.000000", "U2", "late"}})
+	outcome := h.run(watch.Options{After: "1000000000.000000", Debounce: time.Hour, MaxBatch: time.Hour, MaxRun: 5 * time.Minute})
+	if outcome != watch.New || !strings.Contains(h.out.String(), "late") {
+		t.Fatalf("outcome=%s output=%s", outcome, h.out)
+	}
+}
+
+func TestMaxRunNeverOvershootsOrPollsEarly(t *testing.T) {
+	h := newHarness(t)
+	start := h.clock.now
+	outcome := h.run(watch.Options{After: "1000000000.000000", Interval: 7 * time.Minute, MaxRun: 10 * time.Minute})
+	if outcome != watch.Restart || h.clock.now.Sub(start) > 10*time.Minute {
+		t.Fatalf("outcome=%s after %s", outcome, h.clock.now.Sub(start))
+	}
+	for _, d := range h.clock.slept {
+		if d < 7*time.Minute {
+			t.Fatalf("slept %v: polled sooner than --interval to meet --max-run", h.clock.slept)
+		}
+	}
+}
+
+func TestBackoffNeverDropsBelowTheInterval(t *testing.T) {
+	h := newHarness(t)
+	h.thread.fail = func(poll int) *slacktest.Response {
+		if poll >= 2 && poll <= 4 {
+			return &slacktest.Response{Status: 503}
+		}
+		return nil
+	}
+	h.postAt(map[int][3]string{5: {"1000000010.000000", "U2", "x"}})
+	h.run(watch.Options{After: "1000000000.000000", Interval: 5 * time.Minute, ErrorWindow: time.Hour})
+	for _, d := range h.clock.slept {
+		if d < 5*time.Minute {
+			t.Fatalf("slept %v: backoff capped below --interval", h.clock.slept)
+		}
+	}
+}
+
+func TestReArmingPacesTheFirstPollFromThePreviousRun(t *testing.T) {
+	h := newHarness(t)
+	h.thread.post("1000000010.000000", "U2", "one")
+	h.run(watch.Options{After: "1000000000.000000"})
+	polls := h.thread.polls
+	h.clock.slept = nil
+	h.clock.onSleep = func(n int) {
+		if n == 1 && h.thread.polls != polls {
+			t.Fatalf("re-armed waiter polled before waiting out --interval")
+		}
+		if n == 1 {
+			h.thread.post("1000000020.000000", "U2", "two")
+		}
+	}
+	h.out.Reset()
+	h.run(watch.Options{})
+	if len(h.clock.slept) == 0 || h.clock.slept[0] != 15*time.Second {
+		t.Fatalf("first sleep %v, want 15s", h.clock.slept)
+	}
+}
+
+func TestAFirstWatchDoesNotPollTwiceBackToBack(t *testing.T) {
+	h := newHarness(t)
+	h.clock.onSleep = func(n int) {
+		if n == 1 && h.thread.polls != 1 {
+			t.Fatalf("%d polls before the first sleep", h.thread.polls)
+		}
+		if n == 2 {
+			h.thread.post("1000000020.000000", "U2", "x")
+		}
+	}
+	h.run(watch.Options{})
+}
+
+func TestTheLockFileRecordsOurPidAndIsKeptButClearedOnRelease(t *testing.T) {
+	h := newHarness(t)
+	ref, _ := thread.ParseURL(threadURL)
+	h.clock.onSleep = func(n int) {
+		if n == 1 {
+			holder, err := h.store.Holder(ref.Channel, ref.ThreadTS)
+			if err != nil || holder == nil || holder.PID != 4242 {
+				t.Fatalf("while running, holder = %+v %v", holder, err)
+			}
+			h.thread.post("1000000010.000000", "U2", "x")
+		}
+	}
+	h.run(watch.Options{After: "1000000000.000000"})
+	lockPath := filepath.Join(h.store.Dir, ref.Channel+"-"+strings.ReplaceAll(ref.ThreadTS, ".", "")+".lock")
+	data, err := os.ReadFile(lockPath)
+	if err != nil {
+		t.Fatalf("the lock file must never be deleted: %v", err)
+	}
+	if len(data) != 0 {
+		t.Fatalf("release must clear the pid, file holds %q", data)
 	}
 }
