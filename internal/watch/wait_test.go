@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -928,5 +929,34 @@ func TestEachCycleSavesTheLastPollAndOwnPostCursorBeforeSleeping(t *testing.T) {
 	h.run(watch.Options{After: "1000000000.000000"})
 	if !checked {
 		t.Fatal("never reached the check")
+	}
+}
+
+func TestTheLastPollIsSavedBeforePrintingADelivery(t *testing.T) {
+	h := newHarness(t)
+	ref, _ := thread.ParseURL(threadURL)
+	checked := false
+	h.fake.Raw("/files/shot.png", func(w http.ResponseWriter, r *http.Request) {
+		// Mid-delivery (printBatch downloads attachments): a run killed now
+		// must still have recorded this poll, and must not have committed
+		// the cursor past the message being printed.
+		st, err := h.store.Load(ref.Channel, ref.ThreadTS)
+		if err != nil {
+			t.Error(err)
+		}
+		if st.LastPollMS != h.clock.now.UnixMilli() || st.Cursor != "1000000000.000000" {
+			t.Errorf("state while printing = %+v", st)
+		}
+		checked = true
+		_, _ = w.Write([]byte("PNG"))
+	})
+	h.thread.add(map[string]any{"ts": "1000000010.000000", "user": "U2", "text": "see shot",
+		"files": []map[string]any{{"id": "F1", "name": "shot.png", "size": 3, "url_private": h.fake.URL + "/files/shot.png"}}})
+	w := h.waiter()
+	host := strings.TrimPrefix(h.fake.URL, "http://")
+	w.Svc.API.TrustedHost = func(hh string) bool { return hh == host }
+	outcome, _ := w.Run(context.Background(), watch.Options{URL: threadURL, After: "1000000000.000000", Interval: 15 * time.Second})
+	if outcome != watch.New || !checked {
+		t.Fatalf("outcome=%s checked=%v output=%q", outcome, checked, h.out)
 	}
 }

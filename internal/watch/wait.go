@@ -258,9 +258,10 @@ func (s *session) loop(budget *errorBudget, me slack.AuthInfo) (Outcome, error) 
 	for {
 		msgs, cutOff, err := s.poll()
 		now := clock.Now()
-		// Saved once per cycle, by sleep() or the exit path, so saves are an
-		// --interval apart (Windows can refuse to replace a file it was just
-		// asked to write).
+		// Saved by sleep() before each wait, and by the exit path, rather
+		// than after every poll, so routine saves are an --interval apart.
+		// An exit can still save twice in a row (deliver() saves before
+		// and after printing); Store.Save retries the rename for that.
 		s.st.LastPollMS = now.UnixMilli()
 		if err != nil {
 			if s.ctx.Err() != nil {
