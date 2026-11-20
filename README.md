@@ -1,8 +1,9 @@
-<p align="center">
-  <img src="assets/logo.svg" width="160" alt="Perritite logo: a seated dog cut from violet and teal fluorite crystal">
-</p>
-
-# Perritite
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/perritite-logo-on-dark.svg">
+    <img alt="Perritite" src="assets/perritite-logo.svg" height="64">
+  </picture>
+</h1>
 
 **Slack threads for [Claude Code](https://claude.com/claude-code): read them,
 reply in them, and watch them live, waking the model only when someone

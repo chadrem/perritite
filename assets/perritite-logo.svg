@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 470 120" width="470" height="120" role="img" aria-label="Perritite">
+  <title>Perritite</title>
+  <g transform="translate(-15.7 -8.6) scale(0.714)">
+  <g stroke-linejoin="round" stroke-width="1">
+    <!-- tail shard -->
+    <polygon points="56,142 64,128 34,90" fill="#7FD1BF" stroke="#7FD1BF"/>
+    <polygon points="56,142 34,90 44,128" fill="#3F9E8E" stroke="#3F9E8E"/>
+    <!-- haunch -->
+    <polygon points="80,100 94,120 56,142" fill="#6A4EC4" stroke="#6A4EC4"/>
+    <polygon points="94,120 56,142 60,180" fill="#4E3699" stroke="#4E3699"/>
+    <polygon points="94,120 60,180 112,180" fill="#8366D6" stroke="#8366D6"/>
+    <!-- neck and back -->
+    <polygon points="98,62 126,88 80,100" fill="#8F74DE" stroke="#8F74DE"/>
+    <polygon points="126,88 80,100 94,120" fill="#B9A6EE" stroke="#B9A6EE"/>
+    <polygon points="98,62 138,80 126,88" fill="#6A4EC4" stroke="#6A4EC4"/>
+    <!-- chest band: the teal stripe fluorite is known for -->
+    <polygon points="126,88 136,112 94,120" fill="#7FD1BF" stroke="#7FD1BF"/>
+    <polygon points="136,112 94,120 138,142" fill="#3F9E8E" stroke="#3F9E8E"/>
+    <!-- front leg -->
+    <polygon points="94,120 138,142 112,180" fill="#5A3FA8" stroke="#5A3FA8"/>
+    <polygon points="138,142 112,180 134,180" fill="#8366D6" stroke="#8366D6"/>
+    <polygon points="138,142 134,180 162,180" fill="#B9A6EE" stroke="#B9A6EE"/>
+    <!-- head -->
+    <polygon points="130,40 98,62 104,50" fill="#5A3FA8" stroke="#5A3FA8"/>
+    <polygon points="130,40 98,62 138,80" fill="#8366D6" stroke="#8366D6"/>
+    <polygon points="130,40 150,50 138,80" fill="#B9A6EE" stroke="#B9A6EE"/>
+    <polygon points="150,50 138,80 160,77" fill="#8F74DE" stroke="#8F74DE"/>
+    <polygon points="150,50 170,62 160,77" fill="#EDE7FB" stroke="#EDE7FB"/>
+    <!-- ear, pricked: listening -->
+    <polygon points="112,14 130,40 117,44" fill="#EDE7FB" stroke="#EDE7FB"/>
+    <polygon points="112,14 117,44 104,50" fill="#8F74DE" stroke="#8F74DE"/>
+    <!-- nose and eye -->
+    <polygon points="170,62 163,59 164,67" fill="#2E2066" stroke="#2E2066"/>
+    <polygon points="140,52 145,56 140,60 135,56" fill="#2E2066" stroke="#2E2066"/>
+  </g>
+  </g>
+  <g transform="translate(137 -1.75) scale(0.95)" stroke="#1E1640">
+    <g fill="none" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 95 V35 H23 A20 20 0 0 1 23 75 H5"/>
+      <path d="M59 76 H97 A19 19 0 1 0 91.4 89.4"/>
+      <path d="M119 95 V76 A19 19 0 0 1 138 57"/>
+      <path d="M154 95 V76 A19 19 0 0 1 173 57"/>
+      <path d="M191 57 V95"/>
+      <path d="M220 40 V95 M206 57 H234"/>
+      <path d="M249 57 V95"/>
+      <path d="M278 40 V95 M264 57 H292"/>
+      <path d="M305 76 H343 A19 19 0 1 0 337.4 89.4"/>
+    </g>
+    <circle cx="191" cy="39" r="6" fill="#1E1640" stroke="none"/><circle cx="249" cy="39" r="6" fill="#1E1640" stroke="none"/>
+  </g>
+</svg>
