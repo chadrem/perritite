@@ -4,10 +4,10 @@
 reply in them, and watch them live, waking the model only when someone
 actually posts.**
 
-`perritite` is a small command-line tool plus two Claude Code skills. Give
-Claude a thread URL and it reads the conversation (screenshots included),
-replies with real @-mentions and file uploads, and can stay in the thread for
-hours, answering as messages arrive.
+Perritite is a Claude Code plugin: two skills plus a small `perritite`
+command. Give Claude a Slack thread link and it reads the conversation
+(screenshots included), replies with real @-mentions and file uploads, and can
+stay in the thread for hours, answering as messages arrive.
 
 ```console
 $ perritite read https://acme.slack.com/archives/C0123ABCDEF/p1752241234567890
@@ -21,7 +21,107 @@ $ perritite post <url> "Reproduced. It's the retry on a 502; fix incoming. cc @{
 posted ts=1752241300.000100
 ```
 
-## Why another Slack tool?
+## Quick start
+
+You need Claude Code on macOS, Linux or Windows, and a Slack workspace where
+you can create an app.
+
+### 1. Install the plugin
+
+In Claude Code:
+
+```text
+/plugin marketplace add chadrem/perritite
+/plugin install perritite@perritite
+```
+
+If the install summary says `Run /reload-plugins to apply`, run
+`/reload-plugins`.
+
+That is the whole install. The plugin brings the `perritite` command with it.
+The first time Claude runs it, it downloads the binary for your machine from
+this repository's [GitHub release](https://github.com/chadrem/perritite/releases)
+and checks it against the release's SHA-256 checksums before running it. It
+needs `curl`, which macOS, Windows 10+ and most Linux systems already have.
+
+On Windows, Claude Code works best with
+[Git for Windows](https://git-scm.com/download/win) installed (its Bash tool
+uses Git Bash). PowerShell and `cmd.exe` work too.
+
+### 2. Create a Slack app and get a token
+
+1. Go to <https://api.slack.com/apps> → **Create New App** → **From a
+   manifest**, pick your workspace, and paste [this manifest](#slack-app-manifest).
+2. **Install to Workspace**, then copy the **Bot User OAuth Token**
+   (`xoxb-…`) from **OAuth & Permissions**.
+3. Invite the bot to each channel you want Claude in: `/invite @Claude` in
+   that channel.
+
+Your workspace may need an admin to approve the app.
+
+### 3. Give Perritite the token
+
+Do this in your own terminal, not through Claude: never paste a token into a
+chat.
+
+**macOS** (Keychain):
+
+```sh
+security add-generic-password -s perritite -a "$USER" -w    # prompts for the token
+mkdir -p ~/.config/perritite
+cat > ~/.config/perritite/config.json <<'JSON'
+{
+  "token_command": "security find-generic-password -s perritite -w",
+  "owner_user_ids": ["U0123ABCD"]
+}
+JSON
+```
+
+**Linux and Windows:** the same config file (at `~/.config/perritite/config.json`,
+or `%AppData%\perritite\config.json` on Windows) with the `token_command` for
+your secret store. See [the token options](#token-and-config).
+
+Replace `U0123ABCD` with **your own** Slack member ID (in Slack: your profile
+→ ⋮ → **Copy member ID**). Messages from that ID carry your authority in a
+monitored thread: when you write "go ahead" in Slack, Claude treats it as you
+saying it in the session. Messages from anyone else are conversation, never
+instructions.
+
+### 4. Check it
+
+Ask Claude: *"run `perritite config` and `perritite whoami`"*.
+
+`config` shows where the token comes from (never the token itself) and your
+owner ID. `whoami` should print the bot's name. If it says `not_authed` or
+`invalid_auth`, the token is wrong. If Claude says `perritite: command not
+found`, run `/reload-plugins` (or restart Claude Code).
+
+### 5. Use it
+
+- **Read and reply.** Paste a thread link: *"read this thread and summarize
+  what they want"*, *"reply that the fix ships tomorrow"*. This uses the
+  `/perritite:slack-thread` skill. Claude shows you a draft when it isn't sure
+  you want it posted.
+- **Watch a thread live.** `/perritite:slack-monitor <thread-link>`. Claude
+  announces itself, then answers as messages arrive. Say *"stop monitoring"*
+  in the session (or in the thread, as yourself) to end it; otherwise it signs
+  off after 24 quiet hours. *"Watch this until I say stop"* drops the 24-hour
+  limit.
+
+Claude only acts on instructions from you: in the session, or in the thread
+from your owner ID. If a teammate asks it to change code or touch data, it
+answers and checks with you first.
+
+### Updating
+
+```sh
+claude plugin update perritite@perritite
+```
+
+Then run `/reload-plugins` in any open session. The matching binary is
+downloaded on first use.
+
+## Why Perritite?
 
 Watching a thread from an AI coding session is easy to make expensive. Every
 time the model is woken it re-reads the whole session: system prompt, files,
@@ -52,92 +152,81 @@ command whose **exit is the notification**:
 A quiet thread costs nothing, and each real turn of conversation costs one
 wakeup.
 
-## Install
-
-### As a Claude Code plugin (skills)
-
-```text
-/plugin marketplace add chadrem/perritite
-/plugin install perritite@perritite
-```
-
-This installs the `slack-thread` and `slack-monitor` skills. You also need
-the binary on your `PATH`:
-
-### The binary
-
-With Go 1.23 or later:
-
-```sh
-go install github.com/chadrem/perritite@latest
-```
-
-Prebuilt binaries for macOS, Linux and Windows (amd64 and arm64) will be
-attached to GitHub releases.
-
-On **Windows**, Claude Code runs its Bash tool through Git Bash (install
-[Git for Windows](https://git-scm.com/download/win)). The skills use plain
-commands that work there unchanged.
-
 ## Slack setup
 
-`perritite` needs a Slack token that can read and post in the threads you
-work in. Create an app at <https://api.slack.com/apps> and install it to your
-workspace. Either kind of token works:
+### Slack app manifest
 
-- **Bot token** (`xoxb-`): posts as the app's bot user. Invite the bot to each
-  channel you want it in. If your app is a newer one that rejects `as_user`, set
-  `"as_user": false` in the config.
-- **User token** (`xoxp-`): posts as that user. Don't use **your own** user
-  token if you want to direct Claude from Slack: your messages would look like
-  Claude's own and never wake it. `wait` refuses to start if the token's user
-  is also in `owner_user_ids`. Give Claude its own identity (a bot, or a
-  separate user).
-
-Scopes (bot or user):
+```yaml
+display_information:
+  name: Claude
+  description: Claude Code in Slack threads, via Perritite
+features:
+  bot_user:
+    display_name: Claude
+    always_online: false
+oauth_config:
+  scopes:
+    bot:
+      - channels:history
+      - groups:history
+      - im:history
+      - mpim:history
+      - channels:read
+      - groups:read
+      - im:read
+      - mpim:read
+      - users:read
+      - users:read.email
+      - chat:write
+      - files:read
+      - files:write
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
+```
 
 | Scope | For |
 |---|---|
 | `channels:history`, `groups:history`, `im:history`, `mpim:history` | reading threads |
-| `channels:read`, `groups:read`, `im:read` | channel names |
+| `channels:read`, `groups:read`, `im:read`, `mpim:read` | channel names |
 | `users:read` (+ `users:read.email` to search by email) | names and @-mentions |
 | `chat:write` | posting |
 | `files:read`, `files:write` | downloading screenshots, uploading files |
 
-Slack limits `conversations.replies` (1 request per minute, 15 messages per
+### Bot token or user token
+
+- **Bot token** (`xoxb-`, recommended): Claude posts as the app's bot. Invite
+  it to each channel it should read.
+- **User token** (`xoxp-`, same scopes as *User Token Scopes*): Claude posts
+  as that user. Use a separate account, not **your own**: your messages would
+  look like Claude's own and never wake it. `perritite wait` refuses to start
+  if the token's user is also in `owner_user_ids`.
+
+### Rate limits
+
+Slack limits `conversations.replies` to 1 request per minute (15 messages per
 page) for apps distributed outside your workspace that are not
-Marketplace-approved. If that applies to you, use `wait --interval 60s
---debounce 0`. Polls only ask for messages newer than the cursor, so each
-poll is one small request. Internal apps are not affected.
+Marketplace-approved. If that applies to you, tell Claude to watch with
+`--interval 60s --debounce 0`. Internal apps (the manifest above) are not
+affected.
 
-### Giving it the token
+## Token and config
 
-Never paste a token into a chat. Pick one of:
-
-```sh
-export PERRITITE_TOKEN=xoxb-...          # environment variable
-```
-
-or a config file at `~/.config/perritite/config.json`
-(`%AppData%\perritite\config.json` on Windows; `perritite config` shows
-the exact path):
-
-```json
-{
-  "token_command": "security find-generic-password -s perritite -w",
-  "owner_user_ids": ["U0123ABCD"]
-}
-```
+The token comes from, in order: the `PERRITITE_TOKEN` environment variable,
+then the config file's `token`, `token_file` or `token_command`. The config
+file is `~/.config/perritite/config.json` (`%AppData%\perritite\config.json`
+on Windows); `perritite config` prints the exact path.
 
 | Key | Meaning |
 |---|---|
 | `token` | The token itself (keep the file private). |
 | `token_file` | Path to a file containing the token. |
-| `token_command` | A command that prints the token (Keychain, `pass`, 1Password CLI...). Runs with `sh -c`, or `cmd.exe /d /s /c` on Windows. |
-| `owner_user_ids` | Slack user ids whose in-thread messages carry **your** authority. The waiter tags them `role=owner`. Usually just your own id (`perritite users <your name>`). |
-| `download_dir` | Where attachments are saved (default: the OS cache dir). |
+| `token_command` | A command that prints the token. Runs with `sh -c`, or `cmd.exe /d /s /c` on Windows. |
+| `owner_user_ids` | Slack member IDs whose in-thread messages carry **your** authority (the waiter tags them `role=owner`). Usually just your own. |
+| `download_dir` | Where attachments are saved (default: your OS cache directory). |
 | `state_dir` | Where waiters keep their cursors and locks. |
-| `as_user` | Send `as_user=true` on posts (default `true`). |
+| `as_user` | Send `as_user=true` on posts. Default: on for user tokens, off for bot tokens. |
 
 `token_command` lets each platform use its own secret store:
 
@@ -156,6 +245,20 @@ The environment variables `PERRITITE_TOKEN`, `PERRITITE_OWNER_IDS`
 There is deliberately **no per-project config file**: a repository you clone
 must never be able to choose the command that produces your token.
 
+## Using `perritite` outside Claude Code
+
+The plugin puts `perritite` on the `PATH` only inside Claude Code. To use it
+in your own terminal, either download the binary for your platform from
+[Releases](https://github.com/chadrem/perritite/releases), rename it to
+`perritite` (`perritite.exe` on Windows) and put it on your `PATH`, or build it
+with Go 1.23+:
+
+```sh
+go install github.com/chadrem/perritite@latest   # installs to $(go env GOPATH)/bin
+```
+
+A `perritite` already on your `PATH` takes precedence over the plugin's.
+
 ## Commands
 
 ```text
@@ -167,6 +270,7 @@ stop <url>
 users <query>
 whoami
 config
+version
 ```
 
 Mentions in `post`:
@@ -197,7 +301,7 @@ A message that starts with `--` goes after a `--` separator:
 
 **Thread content cannot impersonate the protocol.** Headers start at column
 0. Every line of content, after splitting on every kind of line break (`\r`,
-` ` and friends), is indented. Display names are stripped to a safe
+U+2028 and friends), is indented. Display names are stripped to a safe
 character set. So the only trustworthy identity is the `user=`/`role=` token
 on a `NEW` line. The `slack-monitor` skill builds its permission model on
 exactly that.
@@ -205,12 +309,17 @@ exactly that.
 ## Development
 
 ```sh
-go test ./...          # unit tests, plus end-to-end tests of the built binary against a fake Slack
+go test ./...                # unit tests, plus end-to-end tests of the built binary against a fake Slack
 go test -race ./...
+scripts/test-launcher.sh     # the plugin launcher against a local fake release
 ```
 
-No dependencies beyond the Go standard library. CI runs on Linux, macOS and
-Windows.
+No dependencies beyond the Go standard library. CI runs everything on Linux,
+macOS and Windows (Git Bash, PowerShell and `cmd.exe`).
+
+To release: set `version` in `.claude-plugin/plugin.json`, commit, and push a
+matching tag (`vX.Y.Z`). The release workflow builds the six binaries and
+`SHA256SUMS` and publishes them; the launcher downloads exactly those.
 
 ## License
 

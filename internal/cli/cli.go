@@ -52,7 +52,8 @@ Commands:
   version           Print the version.
 
 Token: PERRITITE_TOKEN, or token / token_file / token_command in the
-config file (see 'perritite config' for its path).
+config file (see 'perritite config' for its path). Setup guide:
+https://github.com/chadrem/perritite#quick-start
 `
 
 // Env is the process environment, injectable for tests.
@@ -259,7 +260,7 @@ func (c *cmd) service(ctx context.Context) (*thread.Service, error) {
 		// anything a redirect points at.
 		api.TrustedHost = config.IsLoopbackHost
 	}
-	return &thread.Service{API: api, DownloadRoot: cfg.DownloadDir, AsUser: cfg.AsUser}, nil
+	return &thread.Service{API: api, DownloadRoot: cfg.DownloadDir, AsUser: cfg.AsUser(token)}, nil
 }
 
 func (c *cmd) ctx() (context.Context, context.CancelFunc) {
@@ -578,6 +579,6 @@ func (c *cmd) showConfig() error {
 	fmt.Fprintf(out, "owners:       %s\n", owners)
 	fmt.Fprintf(out, "state dir:    %s\n", cfg.StateDir)
 	fmt.Fprintf(out, "download dir: %s\n", cfg.DownloadDir)
-	fmt.Fprintf(out, "as_user:      %t\n", cfg.AsUser)
+	fmt.Fprintf(out, "as_user:      %s\n", cfg.AsUserSetting())
 	return nil
 }

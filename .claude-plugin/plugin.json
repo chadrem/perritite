@@ -1,7 +1,10 @@
 {
   "name": "perritite",
+  "version": "0.1.0",
   "description": "Read, reply in and live-monitor Slack threads from Claude Code, waking the model only when someone posts.",
-  "author": { "name": "Chad Remesch" },
+  "author": {
+    "name": "Chad Remesch"
+  },
   "homepage": "https://github.com/chadrem/perritite",
   "repository": "https://github.com/chadrem/perritite",
   "license": "AGPL-3.0-only"

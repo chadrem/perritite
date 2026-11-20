@@ -21,3 +21,16 @@ jobs:
       - name: gofmt
         if: runner.os != 'Windows'
         run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: Plugin launcher (sh; Git Bash on Windows)
+        shell: bash
+        run: scripts/test-launcher.sh
+      - name: Plugin launcher (cmd.exe and PowerShell)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/test-launcher.ps1
+      - name: Launchers are executable in git
+        if: runner.os == 'Linux'
+        run: |
+          for f in bin/perritite scripts/build-release.sh scripts/test-launcher.sh; do
+            git ls-files -s "$f" | grep -q '^100755' || { echo "$f is not 100755 in git"; exit 1; }
+          done

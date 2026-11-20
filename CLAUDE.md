@@ -19,6 +19,14 @@ session. The repo is also a Claude Code plugin marketplace
 - `internal/cli`: argv parsing and rendering.
 - `internal/slacktest`: fake Slack over httptest, used by every test.
 - `e2e_test.go`: builds the binary and runs it as real processes.
+- `bin/perritite` (POSIX sh) and `bin/perritite.cmd` plus
+  `launcher/perritite-fetch.ps1` (Windows): the plugin launchers. Claude Code
+  puts the plugin's `bin/` on PATH. They download the release binary that
+  matches `.claude-plugin/plugin.json`'s `version`, verify it against the
+  release's `SHA256SUMS`, cache it, and exec it.
+  `scripts/test-launcher.{sh,ps1}` test them against a local fake release.
+- `scripts/build-release.sh`: the six release binaries plus `SHA256SUMS`, used
+  by `.github/workflows/release.yml` on a `vX.Y.Z` tag.
 
 ## Commands
 
@@ -67,6 +75,20 @@ GOOS=windows go vet ./...   # Windows-only files compile separately
    Rate-limited apps depend on it.
 10. **Standard library only.** Cross-platform single static binaries are the
    point.
+
+11. **Launchers run only verified release binaries.** A downloaded binary is
+    executed, so it must match `SHA256SUMS`, and `PERRITITE_RELEASE_URL`
+    (the test hook) is honoured only for `127.0.0.1`/`localhost`.
+12. **`plugin.json` `version` is the release version.** The release workflow
+    refuses a tag that doesn't match it, and the launcher fetches exactly that
+    version. Set `version` only in `plugin.json`, never also in
+    `marketplace.json`.
+
+## Releasing
+
+Bump `version` in `.claude-plugin/plugin.json`, commit, push, then
+`git tag vX.Y.Z && git push origin vX.Y.Z`. Users update with
+`claude plugin update perritite@perritite`.
 
 ## Cross-platform notes
 

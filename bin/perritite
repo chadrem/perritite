@@ -1,0 +1,69 @@
+#!/bin/sh
+# Perritite launcher, shipped in the Claude Code plugin's bin/ (which Claude
+# Code puts on PATH). It runs the perritite binary for this plugin's version,
+# downloading it from the GitHub release on first use and checking it against
+# the release's SHA256SUMS. macOS, Linux, and Windows under Git Bash.
+set -eu
+
+die() {
+	echo "perritite: $*" >&2
+	exit 1
+}
+
+repo="chadrem/perritite"
+here=$(cd "$(dirname "$0")" && pwd)
+manifest="$(dirname "$here")/.claude-plugin/plugin.json"
+version=$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$manifest" 2>/dev/null | head -n 1)
+[ -n "$version" ] || die "no version in $manifest"
+
+case "$(uname -s)" in
+	Darwin) os=darwin ;;
+	Linux) os=linux ;;
+	MINGW* | MSYS* | CYGWIN*) os=windows ;;
+	*) die "unsupported OS $(uname -s); install with: go install github.com/$repo@latest" ;;
+esac
+case "$(uname -m)" in
+	x86_64 | amd64) arch=amd64 ;;
+	arm64 | aarch64) arch=arm64 ;;
+	*) die "unsupported CPU $(uname -m); install with: go install github.com/$repo@latest" ;;
+esac
+ext=""
+[ "$os" = windows ] && ext=".exe"
+asset="perritite-$os-$arch$ext"
+dir="${XDG_CACHE_HOME:-$HOME/.cache}/perritite/bin/$version"
+bin="$dir/$asset"
+
+if [ ! -x "$bin" ]; then
+	base="https://github.com/$repo/releases/download"
+	if [ -n "${PERRITITE_RELEASE_URL:-}" ]; then
+		# A test hook, honoured only for a local server: a downloaded binary
+		# is executed, so it must never come from anywhere but the release.
+		case "$PERRITITE_RELEASE_URL" in
+			http://127.0.0.1:* | http://localhost:*) base="$PERRITITE_RELEASE_URL" ;;
+			*) die "PERRITITE_RELEASE_URL must be http://127.0.0.1:<port> or http://localhost:<port>" ;;
+		esac
+	fi
+	command -v curl >/dev/null 2>&1 || die "curl is required to download the perritite binary"
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha() { sha256sum "$1" | awk '{print $1}'; }
+	elif command -v shasum >/dev/null 2>&1; then
+		sha() { shasum -a 256 "$1" | awk '{print $1}'; }
+	else
+		die "sha256sum or shasum is required to verify the download"
+	fi
+	mkdir -p "$dir"
+	tmp=$(mktemp "$dir/.download.XXXXXX")
+	trap 'rm -f "$tmp" "$tmp.sums"' EXIT
+	url="$base/v$version"
+	curl -fsSL --retry 3 -o "$tmp" "$url/$asset" || die "could not download $url/$asset"
+	curl -fsSL --retry 3 -o "$tmp.sums" "$url/SHA256SUMS" || die "could not download $url/SHA256SUMS"
+	want=$(awk -v a="$asset" '$2 == a || $2 == "*" a { print $1 }' "$tmp.sums")
+	[ -n "$want" ] || die "no checksum for $asset in SHA256SUMS"
+	[ "$(sha "$tmp")" = "$want" ] || die "checksum mismatch for $asset; refusing to run it"
+	chmod +x "$tmp"
+	mv -f "$tmp" "$bin"
+	rm -f "$tmp.sums"
+	trap - EXIT
+fi
+
+exec "$bin" "$@"

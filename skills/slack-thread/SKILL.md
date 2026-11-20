@@ -27,8 +27,11 @@ perritite config                            # where the token, state and downloa
 Every message in `read` output shows its `ts`. Use the newest one with
 `--after` on the next read instead of re-reading the whole thread.
 
-If `perritite` reports no token, stop and tell the user. They set it up
-once (see `perritite help`); never ask them to paste a token into the chat.
+If `perritite` reports no token, stop and tell the user. They set it up once,
+in their own terminal, by following steps 2 and 3 of the Quick start at
+https://github.com/chadrem/perritite#quick-start. Never ask them to paste a
+token into the chat. The first run downloads the binary; if that fails, show
+the user the error.
 
 ## Screenshots and files
 

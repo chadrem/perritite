@@ -79,14 +79,14 @@ func TestNoTokenExplainsTheOptions(t *testing.T) {
 func TestEnvOverridesOwnersAndDirectories(t *testing.T) {
 	cfg := load(t, map[string]string{"PERRITITE_OWNER_IDS": "U1, U2", "PERRITITE_STATE_DIR": "/s", "PERRITITE_DOWNLOAD_DIR": "/d"},
 		`{"owner_user_ids":["U9"],"state_dir":"/x","as_user":false}`)
-	if strings.Join(cfg.Owners, ",") != "U1,U2" || cfg.StateDir != "/s" || cfg.DownloadDir != "/d" || cfg.AsUser {
+	if strings.Join(cfg.Owners, ",") != "U1,U2" || cfg.StateDir != "/s" || cfg.DownloadDir != "/d" || cfg.AsUser("xoxp-1") {
 		t.Fatalf("cfg = %+v", cfg)
 	}
 }
 
 func TestDefaultsWhenThereIsNoFile(t *testing.T) {
 	cfg := load(t, nil, "")
-	if cfg.FileExists || !cfg.AsUser || cfg.TokenSource() != "none" {
+	if cfg.FileExists || cfg.TokenSource() != "none" {
 		t.Fatalf("cfg = %+v", cfg)
 	}
 	if !strings.HasSuffix(cfg.StateDir, "perritite") || !strings.Contains(cfg.DownloadDir, "perritite") {
@@ -160,5 +160,15 @@ func TestATokenCommandWhoseChildKeepsThePipeStillYieldsItsToken(t *testing.T) {
 	got, err := token(t, cfg)
 	if err != nil || got != "xoxb-good" {
 		t.Fatalf("got %q err %v", got, err)
+	}
+}
+
+func TestAsUserIsAutomaticByTokenTypeUnlessSet(t *testing.T) {
+	auto := load(t, nil, "")
+	if !auto.AsUser("xoxp-1") || auto.AsUser("xoxb-1") {
+		t.Fatal("automatic as_user: on for user tokens, off for bot tokens")
+	}
+	if on := load(t, nil, `{"as_user":true}`); !on.AsUser("xoxb-1") {
+		t.Fatal("an explicit as_user wins")
 	}
 }

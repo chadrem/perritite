@@ -32,8 +32,9 @@ type File struct {
 	OwnerUserIDs []string `json:"owner_user_ids,omitempty"`
 	DownloadDir  string   `json:"download_dir,omitempty"`
 	StateDir     string   `json:"state_dir,omitempty"`
-	// AsUser sends as_user=true on posts (default true; needed for legacy
-	// and user tokens to post as their own identity).
+	// AsUser sends as_user=true on posts. Unset means automatic: on for
+	// user tokens (xoxp-), which need it to post as their own identity,
+	// off for bot tokens, where Slack documents it as classic-apps-only.
 	AsUser *bool `json:"as_user,omitempty"`
 }
 
@@ -45,14 +46,13 @@ type Config struct {
 	Owners      []string
 	DownloadDir string
 	StateDir    string
-	AsUser      bool
 	APIURL      string // test hook: PERRITITE_API_URL
 	getenv      func(string) string
 }
 
 // Load reads the config file (if any) and applies environment overrides.
 func Load(getenv func(string) string) (*Config, error) {
-	c := &Config{getenv: getenv, AsUser: true}
+	c := &Config{getenv: getenv}
 	c.Path = getenv("PERRITITE_CONFIG")
 	if c.Path == "" {
 		dir, err := configDir(getenv)
@@ -75,9 +75,6 @@ func Load(getenv func(string) string) (*Config, error) {
 	c.Owners = c.File.OwnerUserIDs
 	if v := getenv("PERRITITE_OWNER_IDS"); v != "" {
 		c.Owners = splitList(v)
-	}
-	if c.File.AsUser != nil {
-		c.AsUser = *c.File.AsUser
 	}
 	c.DownloadDir = firstNonEmpty(getenv("PERRITITE_DOWNLOAD_DIR"), expandHome(c.File.DownloadDir, getenv))
 	if c.DownloadDir == "" {
@@ -105,6 +102,22 @@ func Load(getenv func(string) string) (*Config, error) {
 		c.APIURL = v
 	}
 	return c, nil
+}
+
+// AsUser reports whether posts with this token send as_user=true.
+func (c *Config) AsUser(token string) bool {
+	if c.File.AsUser != nil {
+		return *c.File.AsUser
+	}
+	return strings.HasPrefix(token, "xoxp-")
+}
+
+// AsUserSetting describes the as_user setting for `config` output.
+func (c *Config) AsUserSetting() string {
+	if c.File.AsUser != nil {
+		return fmt.Sprintf("%t (set in config)", *c.File.AsUser)
+	}
+	return "automatic (on for user tokens, off for bot tokens)"
 }
 
 // TokenSource describes where the token comes from, without revealing it.
@@ -144,7 +157,7 @@ func (c *Config) Token(ctx context.Context) (string, error) {
 	if c.File.TokenCommand != "" {
 		return runTokenCommand(ctx, c.File.TokenCommand)
 	}
-	return "", fmt.Errorf("no Slack token: set PERRITITE_TOKEN, or token / token_file / token_command in %s (see `perritite help`)", c.Path)
+	return "", fmt.Errorf("no Slack token: set PERRITITE_TOKEN, or token / token_file / token_command in %s (setup: https://github.com/chadrem/perritite#quick-start)", c.Path)
 }
 
 // tokenWaitDelay bounds how long a token_command's leftover children may
