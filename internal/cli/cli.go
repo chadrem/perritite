@@ -45,7 +45,7 @@ Commands:
       background command and treat its exit as the notification. Re-run it
       with no --after to resume where it stopped. --idle 0 waits forever.
 
-  stop <url>        Stop the waiter on a thread and clear its lock.
+  stop <url>        Stop the waiter on a thread.
   users <query>     Find workspace users by name, handle or email.
   whoami            Show the identity the token posts as.
   config            Show where settings, state and downloads live.
@@ -255,9 +255,9 @@ func (c *cmd) service(ctx context.Context) (*thread.Service, error) {
 	api := slack.New(token)
 	if cfg.APIURL != "" {
 		api.BaseURL = cfg.APIURL
-		// Test servers are plain-http localhost: trust loopback and Slack
-		// hosts, never anything else a redirect points at.
-		api.TrustedHost = func(host string) bool { return config.IsLoopbackHost(host) || slack.SlackHost(host) }
+		// Test servers are plain-http localhost: trust loopback only, never
+		// anything a redirect points at.
+		api.TrustedHost = config.IsLoopbackHost
 	}
 	return &thread.Service{API: api, DownloadRoot: cfg.DownloadDir, AsUser: cfg.AsUser}, nil
 }
@@ -450,6 +450,9 @@ func (c *cmd) wait() error {
 	}
 	if opts.Interval < time.Second {
 		return errors.New("--interval must be at least 1s")
+	}
+	if opts.MaxRun > 0 && opts.MaxRun <= opts.Interval {
+		return errors.New("--max-run must be longer than --interval (or every re-arm would exit before polling)")
 	}
 	ctx, cancel := c.ctx()
 	defer cancel()

@@ -220,7 +220,7 @@ func (w *Waiter) run(ctx context.Context, opts Options) (Outcome, error) {
 		if sorted := thread.SortUnique(msgs); len(sorted) > 0 {
 			s.st.Cursor = sorted[len(sorted)-1].TS
 		}
-		s.st.LastActivity, s.st.LastPoll = s.start.Unix(), clock.Now().Unix()
+		s.st.LastActivity, s.st.LastPollMS = s.start.Unix(), clock.Now().UnixMilli()
 	}
 	if s.st.LastActivity == 0 {
 		s.st.LastActivity = s.start.Unix()
@@ -232,8 +232,12 @@ func (w *Waiter) run(ctx context.Context, opts Options) (Outcome, error) {
 
 	// Pace the first poll: never closer than --interval to the last one,
 	// even if that was the previous run's.
-	if s.st.LastPoll > 0 {
-		if wait := opts.Interval - clock.Now().Sub(time.Unix(s.st.LastPoll, 0)); wait > 0 {
+	if s.st.LastPollMS > 0 {
+		wait := opts.Interval - clock.Now().Sub(time.UnixMilli(s.st.LastPollMS))
+		if wait > opts.Interval {
+			wait = opts.Interval // a clock stepped backwards must not become a long hang
+		}
+		if wait > 0 {
 			if out, done, err := s.sleep(wait); done {
 				return out, err
 			}
@@ -247,12 +251,16 @@ func (s *session) loop(budget *errorBudget, self string) (Outcome, error) {
 	for {
 		msgs, err := s.poll()
 		now := clock.Now()
-		s.st.LastPoll = now.Unix()
+		s.st.LastPollMS = now.UnixMilli()
+		s.save() // st.Cursor never passes an undelivered message, so this is always safe
 		if err != nil {
 			if s.ctx.Err() != nil {
 				return s.stop()
 			}
-			if s.pastDeadline(now) || errors.Is(err, context.DeadlineExceeded) {
+			// Only the --max-run deadline means max-run. An ordinary HTTP
+			// timeout also matches context.DeadlineExceeded and must be
+			// ridden out as a transient error, not turned into RESTART.
+			if s.pastDeadline(now) {
 				return s.maxRun()
 			}
 			delay, giveUp := budget.fail(err, now)
@@ -321,8 +329,8 @@ func (s *session) loop(budget *errorBudget, self string) (Outcome, error) {
 
 		delay := opts.Interval
 		if len(s.pending) > 0 {
-			// Settling a burst: poll again once --debounce (or --max-batch)
-			// is up, but never sooner than --interval.
+			// Settling a burst: poll again once the debounce (or the
+			// MaxBatch cap) is up, but never sooner than --interval.
 			remaining := opts.Debounce - now.Sub(s.lastPending)
 			if batch := opts.MaxBatch - now.Sub(s.firstPending); batch < remaining {
 				remaining = batch

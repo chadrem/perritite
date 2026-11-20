@@ -133,7 +133,7 @@ the exact path):
 |---|---|
 | `token` | The token itself (keep the file private). |
 | `token_file` | Path to a file containing the token. |
-| `token_command` | A command that prints the token (Keychain, `pass`, 1Password CLI...). Runs with `sh -c`, or `cmd /C` on Windows. |
+| `token_command` | A command that prints the token (Keychain, `pass`, 1Password CLI...). Runs with `sh -c`, or `cmd.exe /d /s /c` on Windows. |
 | `owner_user_ids` | Slack user ids whose in-thread messages carry **your** authority. The waiter tags them `role=owner`. Usually just your own id (`perritite users <your name>`). |
 | `download_dir` | Where attachments are saved (default: the OS cache dir). |
 | `state_dir` | Where waiters keep their cursors and locks. |

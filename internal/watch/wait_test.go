@@ -55,6 +55,8 @@ type fakeThread struct {
 	msgs  []map[string]any
 	polls int
 	fail  func(poll int) *slacktest.Response
+	// stall makes a poll hang (to trip the client's HTTP timeout).
+	stall func(poll int) time.Duration
 }
 
 func (f *fakeThread) post(ts, user, text string) {
@@ -69,10 +71,16 @@ func (f *fakeThread) add(m map[string]any) {
 
 func (f *fakeThread) handler(url.Values) slacktest.Response {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.polls++
+	poll := f.polls
+	f.mu.Unlock()
+	if f.stall != nil {
+		time.Sleep(f.stall(poll))
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.fail != nil {
-		if r := f.fail(f.polls); r != nil {
+		if r := f.fail(poll); r != nil {
 			return *r
 		}
 	}
@@ -766,5 +774,75 @@ func TestTheLockFileRecordsOurPidAndIsKeptButClearedOnRelease(t *testing.T) {
 	}
 	if len(data) != 0 {
 		t.Fatalf("release must clear the pid, file holds %q", data)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Third review follow-ups
+// ---------------------------------------------------------------------------
+
+func TestAnHTTPTimeoutIsRiddenOutNotMistakenForMaxRun(t *testing.T) {
+	h := newHarness(t)
+	h.thread.stall = func(poll int) time.Duration {
+		if poll == 2 || poll == 3 {
+			return 300 * time.Millisecond
+		}
+		return 0
+	}
+	h.postAt(map[int][3]string{3: {"1000000010.000000", "U2", "after the timeouts"}})
+	w := h.waiter()
+	w.Svc.API.HTTP.Timeout = 50 * time.Millisecond
+	outcome, _ := w.Run(context.Background(), watch.Options{URL: threadURL, After: "1000000000.000000"})
+	if outcome != watch.New || !strings.Contains(h.out.String(), "after the timeouts") {
+		t.Fatalf("outcome=%s output=%q: a timeout without --max-run is a transient error", outcome, h.out)
+	}
+}
+
+func seedState(t *testing.T, h *harness, st watch.State) {
+	t.Helper()
+	ref, _ := thread.ParseURL(threadURL)
+	st.URL, st.Channel, st.ThreadTS = threadURL, ref.Channel, ref.ThreadTS
+	if err := h.store.Save(st); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPacingUsesMillisecondsAndIsClampedToTheInterval(t *testing.T) {
+	for name, c := range map[string]struct {
+		lastPollMS int64
+		want       time.Duration
+	}{
+		"14.9s ago":         {-14900, 100 * time.Millisecond},
+		"6h in the future":  {6 * 3600 * 1000, 15 * time.Second},
+		"long ago: no wait": {-3600 * 1000, 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			seedState(t, h, watch.State{Cursor: "1000000000.000000", LastActivity: h.clock.now.Unix(),
+				LastPollMS: h.clock.now.UnixMilli() + c.lastPollMS})
+			h.thread.post("1000000010.000000", "U2", "hi")
+			h.run(watch.Options{Debounce: 0})
+			var first time.Duration
+			if len(h.clock.slept) > 0 {
+				first = h.clock.slept[0]
+			}
+			if c.want == 0 && h.thread.polls != 1 {
+				t.Fatalf("want an immediate poll, slept %v", h.clock.slept)
+			}
+			if c.want > 0 && first != c.want {
+				t.Fatalf("first sleep %v, want %v", first, c.want)
+			}
+		})
+	}
+}
+
+func TestLastPollIsSavedEvenWhenTheRunFails(t *testing.T) {
+	h := newHarness(t)
+	h.thread.fail = func(int) *slacktest.Response { r := slacktest.Err("channel_not_found"); return &r }
+	h.run(watch.Options{After: "1000000000.000000"})
+	ref, _ := thread.ParseURL(threadURL)
+	st, _ := h.store.Load(ref.Channel, ref.ThreadTS)
+	if st.LastPollMS != h.clock.now.UnixMilli() {
+		t.Fatalf("LastPollMS = %d, want %d", st.LastPollMS, h.clock.now.UnixMilli())
 	}
 }

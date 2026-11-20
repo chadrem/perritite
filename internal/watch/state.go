@@ -22,9 +22,10 @@ type State struct {
 	// LastActivity is the last time anyone (including us) posted; the idle
 	// clock and keep-warm window measure from it, across runs.
 	LastActivity int64 `json:"last_activity"`
-	// LastPoll paces the next run's first poll, so re-arming never polls
-	// sooner than --interval after the previous run's last poll.
-	LastPoll int64 `json:"last_poll,omitempty"`
+	// LastPollMS (Unix milliseconds) paces the next run's first poll, so
+	// re-arming never polls sooner than --interval after the previous
+	// run's last poll. Saved after every poll, so a killed run paces too.
+	LastPollMS int64 `json:"last_poll_ms,omitempty"`
 }
 
 // Store keeps state files and lock files in Dir.
