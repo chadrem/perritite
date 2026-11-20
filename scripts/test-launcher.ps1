@@ -13,7 +13,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $plugin '.claude-plugin'), 
 Copy-Item -Recurse (Join-Path $root 'bin') (Join-Path $plugin 'bin')
 Copy-Item (Join-Path $root 'launcher\perritite-fetch.ps1') (Join-Path $plugin 'launcher')
 Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $plugin 'bin\perritite.exe')
-Set-Content -NoNewline (Join-Path $plugin '.claude-plugin\plugin.json') "{ `"name`": `"perritite`", `"version`": `"$version`" }"
+[IO.File]::WriteAllText((Join-Path $plugin '.claude-plugin\plugin.json'), "{ `"name`": `"perritite`", `"version`": `"$version`" }")
 
 bash (Join-Path $root 'scripts/build-release.sh') $version ($release -replace '\\', '/')
 if ($LASTEXITCODE -ne 0) { Fail 'build failed' }
@@ -41,13 +41,13 @@ try {
   Write-Output 'ok: later calls go straight to perritite.exe, with & and quotes intact'
 
   # A tampered installed exe is replaced, never run.
-  Set-Content -LiteralPath (Join-Path $plugin 'bin\perritite.exe') 'garbage'
+  [IO.File]::WriteAllText((Join-Path $plugin 'bin\perritite.exe'), 'garbage')
   $out = (cmd /c (Join-Path $plugin 'bin\perritite.cmd') version) | Out-String
   if ($out.Trim() -ne "perritite $version") { Fail "after tampering, printed '$out'" }
   Write-Output 'ok: a tampered perritite.exe is replaced by a verified one'
 
   # A release that doesn't match the committed checksum is refused.
-  Get-ChildItem -LiteralPath $release -Filter 'perritite-*' | ForEach-Object { Set-Content -LiteralPath $_.FullName 'garbage' }
+  Get-ChildItem -LiteralPath $release -Filter 'perritite-*' | ForEach-Object { [IO.File]::WriteAllText($_.FullName, 'garbage') }
   Remove-Item -Force -LiteralPath (Join-Path $plugin 'bin\perritite.exe')
   $out = (cmd /c ((Join-Path $plugin 'bin\perritite.cmd') + ' version 2>&1')) | Out-String
   if ($LASTEXITCODE -eq 0 -or $out -notmatch 'checksum mismatch') { Fail "ran a binary that does not match the committed checksum: '$out'" }

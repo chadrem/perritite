@@ -23,8 +23,13 @@ for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 wi
 		-o "$out/perritite-$os-$arch$ext" .
 done
 cd "$out"
-if command -v sha256sum >/dev/null 2>&1; then
-	sha256sum perritite-* >SHA256SUMS
-else
-	shasum -a 256 perritite-* >SHA256SUMS
-fi
+# One fixed format ("HASH  name"): Git Bash's sha256sum would write
+# "HASH *name", and the committed file must match byte for byte.
+for f in perritite-*; do
+	if command -v sha256sum >/dev/null 2>&1; then
+		h=$(sha256sum "$f" | awk '{print $1}')
+	else
+		h=$(shasum -a 256 "$f" | awk '{print $1}')
+	fi
+	printf '%s  %s\n' "$h" "$f"
+done >SHA256SUMS
