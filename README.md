@@ -124,13 +124,17 @@ If something is off:
   messages between other people at all.
 - **`perritite: command not found`:** run `/reload-plugins`, or restart
   Claude Code.
-- **`could not download …`** on the first run: the machine can't reach
-  `github.com` (a proxy or firewall). Install the binary yourself
-  ([below](#using-perritite-outside-claude-code)); a `perritite` on your
-  `PATH` works the same way.
-- **`checksum mismatch`:** what was downloaded is not the published build
-  (often a proxy that rewrites or blocks downloads), so it is not run.
-  Install the binary yourself as above.
+- **`could not download …`** or **`checksum mismatch`** on the first run:
+  the machine can't fetch the published build from `github.com` (a proxy or
+  firewall that blocks or rewrites downloads), so nothing is run. Download
+  the binary for your platform from
+  [Releases](https://github.com/chadrem/perritite/releases) another way and
+  put it where the launcher looks; it verifies the file before using it:
+  - macOS, Linux and Git Bash:
+    `~/.cache/perritite/bin/<version>/perritite-<os>-<arch>` (for example
+    `perritite-darwin-arm64`; the version is the plugin's, e.g. `0.1.2`);
+  - Windows PowerShell or `cmd.exe`: the plugin's `bin\perritite.exe` (its
+    folder is under `~/.claude/plugins/cache/perritite/perritite/<version>/`).
 
 ### 5. Use it
 

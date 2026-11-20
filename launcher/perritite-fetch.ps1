@@ -66,6 +66,8 @@ try {
   if ((Sha256 $tmp) -ne $want) { Fail "checksum mismatch for $asset; refusing to run it" }
   # Move, not Copy: a rename is atomic, so nobody ever sees a half-written exe.
   try {
+    # A concurrent first run may have installed a good one meanwhile: keep it.
+    if ([IO.File]::Exists($exe) -and (Sha256 $exe) -eq $want) { exit 0 }
     if ([IO.File]::Exists($exe)) { [IO.File]::Delete($exe) } # a stale or tampered one
     [IO.File]::Move($tmp, $exe)
   } catch {

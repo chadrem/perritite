@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // State is what a watch remembers between runs, so re-arming needs no
@@ -86,11 +87,17 @@ func (s *Store) Save(st State) error {
 		os.Remove(tmp.Name())
 		return err
 	}
-	if err := os.Rename(tmp.Name(), path); err != nil {
-		os.Remove(tmp.Name())
-		return err
+	// Windows refuses to replace a file another process (antivirus, an
+	// indexer) briefly holds open; retry for up to half a second.
+	var err2 error
+	for i := 0; i < 10; i++ {
+		if err2 = os.Rename(tmp.Name(), path); err2 == nil {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
-	return nil
+	os.Remove(tmp.Name())
+	return err2
 }
 
 // ---------------------------------------------------------------------------

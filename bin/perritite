@@ -50,12 +50,13 @@ dir="$base/bin/$version"
 bin="$dir/$asset"
 mkdir -p "$base" || die "cannot create $base"
 # Nobody else may be able to write where the binary lives.
-[ -O "$base" ] || die "$base is not owned by you; refusing to use it"
+[ -O "$base" ] || die "$base is not owned by you; refusing to use it (fix: chown -R \"\$(id -un)\" \"$base\", or delete it)"
 chmod 700 "$base" 2>/dev/null || true
 
 if [ -f "$bin" ] && [ "$(sha "$bin")" = "$want" ]; then
-	[ -x "$bin" ] || chmod +x "$bin"
-	exec "$bin" "$@"
+	[ -x "$bin" ] || chmod +x "$bin" 2>/dev/null || :
+	[ -x "$bin" ] && exec "$bin" "$@"
+	rm -f "$bin" 2>/dev/null || : # can't make it runnable: replace it below
 fi
 
 # Missing, stale or tampered: (re)download and verify.

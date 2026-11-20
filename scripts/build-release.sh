@@ -13,7 +13,8 @@ toolchain=$(sed -n 's/^toolchain //p' go.mod)
 [ -n "$toolchain" ] || { echo "go.mod has no toolchain line" >&2; exit 1; }
 # Pin everything else that changes the output, so the caller's environment
 # (or `go env -w`) can't.
-export GOTOOLCHAIN="$toolchain" CGO_ENABLED=0 GOFLAGS="" GOAMD64=v1 GOARM64=v8.0 GOEXPERIMENT=""
+# GOENV=off stops `go env -w` settings filling in the empty values.
+export GOENV=off GOTOOLCHAIN="$toolchain" CGO_ENABLED=0 GOFLAGS="" GOAMD64=v1 GOARM64=v8.0 GOEXPERIMENT=""
 mkdir -p "$out"
 for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
 	os=${target%/*}

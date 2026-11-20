@@ -858,3 +858,44 @@ func TestABotsOwnPostsAreRecognisedByBotIDToo(t *testing.T) {
 		t.Fatalf("output: %s", h.out)
 	}
 }
+
+// steppingClock is real-time based (so --max-run's context deadline fires)
+// and can be stepped by another goroutine.
+type steppingClock struct {
+	mu     sync.Mutex
+	now    time.Time
+	sleeps int
+}
+
+func (c *steppingClock) Now() time.Time  { c.mu.Lock(); defer c.mu.Unlock(); return c.now }
+func (c *steppingClock) set(t time.Time) { c.mu.Lock(); c.now = t; c.mu.Unlock() }
+func (c *steppingClock) Sleep(ctx context.Context, d time.Duration) error {
+	c.mu.Lock()
+	c.now = c.now.Add(d)
+	c.sleeps++
+	c.mu.Unlock()
+	return ctx.Err()
+}
+
+func TestAPollCutOffByMaxRunEndsTheRunEvenAfterAClockStep(t *testing.T) {
+	h := newHarness(t)
+	start := time.Now().Round(0)
+	clock := &steppingClock{now: start}
+	h.thread.stall = func(poll int) time.Duration {
+		if poll == 1 {
+			clock.set(start.Add(-time.Hour)) // the wall clock steps back mid-poll
+			return 2 * time.Second
+		}
+		return 0
+	}
+	w := h.waiter()
+	w.Clock = clock
+	outcome, _ := w.Run(context.Background(), watch.Options{URL: threadURL, After: "1000000000.000000",
+		Interval: 15 * time.Second, MaxRun: 500 * time.Millisecond})
+	if outcome != watch.Restart {
+		t.Fatalf("outcome = %s, output %q", outcome, h.out)
+	}
+	if clock.sleeps != 0 {
+		t.Fatalf("kept retrying (%d sleeps) after its own --max-run deadline cut the poll off", clock.sleeps)
+	}
+}

@@ -55,7 +55,9 @@ so a quiet thread would wake you twice an hour just to re-arm.
    - description: `Wait for replies in <#channel> thread`
 
    The call returns at once with a task id. If it doesn't, you ran it in the
-   foreground: let it finish, then re-arm in the background.
+   foreground: when it returns, act on its output as described below (a
+   `NEW` is real and will not be delivered again), then re-arm with
+   `run_in_background: true`.
 
 4. Keep working normally, or end your turn. When the waiter exits you get a
    task notification. **Read its output file** (the notification gives the

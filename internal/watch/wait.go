@@ -256,18 +256,21 @@ func own(m slack.Message, me slack.AuthInfo) bool {
 func (s *session) loop(budget *errorBudget, me slack.AuthInfo) (Outcome, error) {
 	w, opts, clock := s.w, s.opts, s.w.clock()
 	for {
-		msgs, err := s.poll()
+		msgs, err, cutOff := s.poll()
 		now := clock.Now()
+		// Saved once per cycle, by sleep() or the exit path, so saves are an
+		// --interval apart (Windows can refuse to replace a file it was just
+		// asked to write).
 		s.st.LastPollMS = now.UnixMilli()
-		s.save() // st.Cursor never passes an undelivered message, so this is always safe
 		if err != nil {
 			if s.ctx.Err() != nil {
 				return s.stop()
 			}
-			// Only the --max-run deadline means max-run. An ordinary HTTP
-			// timeout also matches context.DeadlineExceeded and must be
-			// ridden out as a transient error, not turned into RESTART.
-			if s.pastDeadline(now) {
+			// Only the --max-run deadline means max-run: cutOff says our own
+			// deadline context expired (monotonic, immune to clock steps).
+			// An ordinary HTTP timeout also matches DeadlineExceeded and is
+			// ridden out as a transient error.
+			if cutOff || s.pastDeadline(now) {
 				return s.maxRun()
 			}
 			delay, giveUp := budget.fail(err, now)
@@ -281,6 +284,7 @@ func (s *session) loop(budget *errorBudget, me slack.AuthInfo) (Outcome, error) 
 				// let the next run report the error.
 				return s.deliver()
 			case giveUp != nil:
+				s.save() // every exit saves once, so a re-arm still paces by --interval
 				return Failed, giveUp
 			case len(s.pending) > 0 && s.settled(now):
 				return s.deliver()
@@ -292,13 +296,12 @@ func (s *session) loop(budget *errorBudget, me slack.AuthInfo) (Outcome, error) 
 		}
 		budget.ok()
 
-		committed := false
 		for _, m := range thread.Newer(thread.SortUnique(msgs), s.seen) {
 			s.seen, s.st.LastActivity = m.TS, now.Unix()
 			if own(m, me) {
 				// Our own post: never wakes anyone.
 				if len(s.pending) == 0 {
-					s.st.Cursor, committed = m.TS, true
+					s.st.Cursor = m.TS
 				}
 				continue
 			}
@@ -311,11 +314,6 @@ func (s *session) loop(budget *errorBudget, me slack.AuthInfo) (Outcome, error) 
 
 		if len(s.pending) > 0 && s.settled(now) {
 			return s.deliver()
-		}
-		if committed {
-			if err := w.Store.Save(s.st); err != nil {
-				return Failed, err
-			}
 		}
 		if s.pastDeadline(now) {
 			return s.maxRun()
@@ -353,14 +351,18 @@ func (s *session) loop(budget *errorBudget, me slack.AuthInfo) (Outcome, error) 
 }
 
 // poll fetches replies newer than seen, bounded by the --max-run deadline.
-func (s *session) poll() ([]slack.Message, error) {
-	ctx := s.ctx
-	if !s.deadline.IsZero() {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithDeadline(ctx, s.deadline)
-		defer cancel()
+// cutOff reports that the deadline itself (not the caller, not an HTTP
+// timeout) ended the request.
+func (s *session) poll() ([]slack.Message, error, bool) {
+	if s.deadline.IsZero() {
+		msgs, err := s.w.Svc.API.Replies(s.ctx, s.ref.Channel, s.ref.ThreadTS, s.seen)
+		return msgs, err, false
 	}
-	return s.w.Svc.API.Replies(ctx, s.ref.Channel, s.ref.ThreadTS, s.seen)
+	ctx, cancel := context.WithDeadline(s.ctx, s.deadline)
+	defer cancel()
+	msgs, err := s.w.Svc.API.Replies(ctx, s.ref.Channel, s.ref.ThreadTS, s.seen)
+	cutOff := err != nil && s.ctx.Err() == nil && errors.Is(ctx.Err(), context.DeadlineExceeded)
+	return msgs, err, cutOff
 }
 
 // sleep waits d, unless that would carry the run past --max-run, in which
@@ -372,6 +374,7 @@ func (s *session) sleep(d time.Duration) (Outcome, bool, error) {
 		out, err := s.maxRun()
 		return out, true, err
 	}
+	s.save() // the one save per cycle; st.Cursor never passes an undelivered message
 	if err := clock.Sleep(s.ctx, d); err != nil {
 		out, err := s.stop()
 		return out, true, err
